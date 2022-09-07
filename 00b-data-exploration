@@ -1,0 +1,274 @@
+# This script was used to explore various aspects of the data 
+
+load("rdata/SPLOT/sPlotOpen (2).RData")
+
+# Explore location uncertainty ----
+unique(header.oa$Location_uncertainty)
+
+splot_master2_12 <- read.csv("rdata/splotdt_glonaf_master2_12.csv") %>% 
+  left_join(header.oa %>% 
+              select(PlotObservationID, Location_uncertainty)) 
+View(splot_master2_12)
+max(unique(splot_master2_12$Location_uncertainty)) #max location uncertainty is 2,000m
+
+splot_master <- read.csv("rdata/splotdt_glonaf_master2.csv") %>% 
+  left_join(header.oa %>% 
+              select(PlotObservationID, Location_uncertainty)) 
+max(unique(splot_master$Location_uncertainty)) #max location uncertainty is 2,000m
+
+# Exploration on different grid resolutions ------
+
+# Resolution 13 ----
+nrow(splot_master2) #2,007
+unique(splot_master2$Abundance_scale)
+length(unique(splot_master2$PlotObservationID)) #1,482 plots
+length(unique(splot_master2$cell)) #64 cells 
+length(unique(splot_master2$Biome)) #10 different biomes
+unique(splot_master2$Biome)
+#Master dataset for evenness plots only (res13)
+unique(splot_master2_evenness$Abundance_scale) #no pa 
+nrow(splot_master2_evenness) #1,909 rows
+length(unique(splot_master2_evenness$PlotObservationID)) #1,432 plots 
+length(unique(splot_master2_evenness$cell)) #62 cells 
+
+#Resolution 12 ----
+# Tested grid resolution 12 but chose grid resolution 13 for analysis 
+nrow(splot_master2_12) #29,437
+unique(splot_master2_12$Abundance_scale)
+length(unique(splot_master2_12$PlotObservationID)) #2,241 plots
+length(unique(splot_master2_12$cell)) #92 cells 
+length(unique(splot_master2_12$Biome)) #10 different biomes
+unique(splot_master2_12$Biome)
+#Master dataset for evenness plots only (res12)
+unique(splot_master2_12_evenness$Abundance_scale) #no pa 
+nrow(splot_master2_12_evenness) #2,816 rows
+length(unique(splot_master2_12_evenness$PlotObservationID)) #2,062 plots 
+length(unique(splot_master2_12_evenness$cell)) #88 cells 
+
+# Original sPlot diversity data and abundance scales per plot -----
+dt_exploration <- DT2.oa %>% 
+  select(PlotObservationID, Abundance_scale) %>%
+  distinct()
+head(dt_exploration)
+nrow(dt_exploration) #96,664
+length(unique(dt_exploration$PlotObservationID)) #95,104
+
+dt_reduced <- DT2.oa %>% # There are more than one abundance scale per plot
+  select(PlotObservationID, Abundance_scale) %>%
+  distinct() %>% 
+  group_by(PlotObservationID) %>% 
+  distinct() %>% 
+  mutate(abundance_scale=paste(Abundance_scale,collapse="")) %>% 
+  select(-Abundance_scale) 
+View(dt_reduced)
+nrow(dt_reduced)
+length(unique(dt_reduced$PlotObservationID))
+
+# --> There is more than 1 abundance scale per plot
+
+
+# Biomes per cell ---- 
+master3b <- read.csv("rdata/splotdt_glonaf_griis_master3_c.csv")
+master3exploration <- master3b %>% select("biome", "cell") %>% distinct %>% 
+  group_by(biome) %>% 
+  group_by(cell) %>% 
+  count(biome)
+head(master3exploration)
+nrow(master3exploration)
+length(unique(master3c$cell))
+unique(master3c$biome)
+unique(master3exploration$biome)
+
+# Countries exploration --------
+# number of countries in analysis
+master3c <- read.csv("rdata/splotdt_glonaf_griis_master3_c.csv")
+splotdt_glonaf_griis <- read.csv("rdata/splotdt_glonaf_griis.csv")
+head(splotdt_glonaf_griis)
+unique(splotdt_glonaf_griis$species_status)
+countries_exploration <- master3c %>% 
+  left_join(splotdt_glonaf_griis %>% 
+              select(PlotObservationID, OBJIDsic, country_code)) %>% 
+  select(-shannon_di, -N, -species_richness, -simpson_di, -inv_simpson_di, -BG, -biome) %>% 
+  distinct()
+head(countries_exploration)
+unique(countries_exploration$country_code)
+length(unique(countries_exploration$country_code))
+length(unique(countries_exploration$PlotObservationID))
+length(unique(countries_exploration$cell))
+
+# Percentages of plots in different countries 
+splotdt_glonaf_griis <- read.csv("rdata/splotdt_glonaf_griis.csv")
+master3_a <- read.csv("rdata/splotdt_glonaf_griis_master3_a.csv")
+master3_b <- read.csv("rdata/splotdt_glonaf_griis_master3_b.csv")
+countries_exploration_a <- master3_a %>% 
+  select(PlotObservationID) %>% 
+  distinct() %>% 
+  left_join(splotdt_glonaf_griis %>% 
+              select(PlotObservationID, country_code)) %>% 
+  distinct() %>%
+  select("country_code")
+percentages <- table(countries_exploration_a) / 1615
+
+
+# Habitats exploration --------
+unique(header.oa$ESY)
+master3_a_hab <- master3_a %>% 
+  left_join(header.oa %>% 
+              select(PlotObservationID, ESY))
+head(master3_a_hab) 
+table(master3_a_hab$ESY, useNA = 'always')
+
+# Distribution of plots for exploration in GIS -------
+# A/ 
+master3a <- read.csv("rdata/splotdt_glonaf_griis_master3_a.csv")
+head(master3a)
+splotdt_glonaf_griis <- read.csv("rdata/splotdt_glonaf_griis.csv")
+master3a_distribution <- master3a %>% 
+  select(PlotObservationID, plot_status, cell, biome) %>% 
+  left_join(header.oa %>% 
+              select(PlotObservationID, Latitude, Longitude)) %>% 
+  distinct()
+head(master3a_distribution)
+nrow(master3a_distribution)
+length(unique(master3a_distribution$PlotObservationID))
+length(unique(master3a_distribution$cell))
+
+# Export
+write_csv(master3a_distribution, "rdata/splotdt_glonaf_griis_master3_a_distribution.csv")
+
+#AA/ 
+master3aa <- read.csv("rdata/splotdt_glonaf_griis_master3_aa.csv")
+splotdt_glonaf_griis <- read.csv("rdata/splotdt_glonaf_griis.csv")
+master3aa_distribution <- master3aa %>% 
+  select(PlotObservationID, plot_status) %>% 
+  left_join(splotdt_glonaf_griis %>% 
+              select(PlotObservationID, LAT, LON)) %>% 
+  distinct() 
+View(master3aa_distribution)
+nrow(master3aa_distribution)
+# Export
+write_csv(master3aa_distribution, "rdata/splotdt_glonaf_griis_master3_aa_distribution.csv")
+
+# B/ 
+master3b <- read.csv("rdata/splotdt_glonaf_griis_master3_b.csv")
+splotdt_glonaf_griis <- read.csv("rdata/splotdt_glonaf_griis.csv")
+master3b_distribution <- master3b %>% 
+  select(PlotObservationID, plot_status, cell, biome) %>% 
+  left_join(header.oa %>% 
+              select(PlotObservationID, Latitude, Longitude)) %>% 
+  distinct()
+head(master3b_distribution)
+nrow(master3b_distribution)
+length(unique(master3b_distribution$PlotObservationID))
+length(unique(master3b_distribution$cell))
+# Export
+write_csv(master3b_distribution, "rdata/splotdt_glonaf_griis_master3_b_distribution.csv")
+
+# B evenness / 
+master3_b_evenness <- read.csv("rdata/splotdt_glonaf_griis_master3_b_evenness.csv")
+head(master3_b_evenness)
+splotdt_glonaf_griis <- read.csv("rdata/splotdt_glonaf_griis.csv")
+master3b_evenness_distribution <- master3_b_evenness %>% 
+  select(PlotObservationID, plot_status, cell, biome) %>% 
+  left_join(header.oa %>% 
+              select(PlotObservationID, Latitude, Longitude)) %>% 
+  distinct()
+head(master3b_evenness_distribution)
+nrow(master3b_evenness_distribution) # 570 
+length(unique(master3b_evenness_distribution$PlotObservationID)) #570 
+length(unique(master3b_evenness_distribution$cell)) # 37 
+# Export
+write_csv(master3b_evenness_distribution, "rdata/splotdt_glonaf_griis_master3_b_evenness_distribution.csv")
+
+
+# BB/ 
+master3bb <- read.csv("rdata/splotdt_glonaf_griis_master3_bb.csv")
+splotdt_glonaf_griis <- read.csv("rdata/splotdt_glonaf_griis.csv")
+master3bb_distribution <- master3bb %>% 
+  select(PlotObservationID, plot_status) %>% 
+  left_join(splotdt_glonaf_griis %>% 
+              select(PlotObservationID, LAT, LON))%>% 
+  distinct()
+# Export
+write_csv(master3bb_distribution, "rdata/splotdt_glonaf_griis_master3_bb_distribution.csv")
+
+# C/ 
+master3c <- read.csv("rdata/splotdt_glonaf_griis_master3_c.csv")
+splotdt_glonaf_griis <- read.csv("rdata/splotdt_glonaf_griis.csv")
+master3c_distribution <- master3c %>% 
+  select(PlotObservationID, plot_status, cell, biome) %>% 
+  left_join(header.oa %>% 
+              select(PlotObservationID, Latitude, Longitude)) %>% 
+  distinct()
+head(master3c_distribution)
+nrow(master3c_distribution)
+length(unique(master3c_distribution$PlotObservationID))
+length(unique(master3c_distribution$cell))
+# Export
+write_csv(master3c_distribution, "rdata/splotdt_glonaf_griis_master3_c_distribution.csv")
+
+# CC/ 
+master3cc <- read.csv("rdata/splotdt_glonaf_griis_master3_cc.csv")
+splotdt_glonaf_griis <- read.csv("rdata/splotdt_glonaf_griis.csv")
+master3cc_distribution <- master3cc %>% 
+  select(PlotObservationID, plot_status) %>% 
+  left_join(splotdt_glonaf_griis %>% 
+              select(PlotObservationID, LAT, LON))%>% 
+  distinct()
+# Export
+write_csv(master3cc_distribution, "rdata/splotdt_glonaf_griis_master3_cc_distribution.csv")
+
+# CCC/ 
+master3ccc <- read.csv("rdata/splotdt_glonaf_griis_master3_ccc.csv")
+splotdt_glonaf_griis <- read.csv("rdata/splotdt_glonaf_griis.csv")
+master3ccc_distribution <- master3ccc %>% 
+  select(PlotObservationID, plot_status) %>% 
+  left_join(splotdt_glonaf_griis %>% 
+              select(PlotObservationID, LAT, LON))%>% 
+  distinct()
+# Export
+write_csv(master3ccc_distribution, "rdata/splotdt_glonaf_griis_master3_ccc_distribution.csv")
+
+
+# Plot size exploration ------
+# a/
+master3a <- read.csv("rdata/splotdt_glonaf_griis_master3_a.csv")
+master3a_sizes_loc_uncertainty <- master3a %>% 
+  left_join(header.oa %>% 
+              select(PlotObservationID, Releve_area, Location_uncertainty)) %>% 
+  distinct()
+head(master3a_sizes_loc_uncertainty)
+table(unique(master3a_sizes_loc_uncertainty$Releve_area))
+table(unique(master3a_sizes_loc_uncertainty$Location_uncertainty))
+# b/
+master3b <- read.csv("rdata/splotdt_glonaf_griis_master3_b.csv")
+master3b_sizes_loc_uncertainty <- master3b %>% 
+  left_join(header.oa %>% 
+              select(PlotObservationID, Releve_area, Location_uncertainty)) %>% 
+  distinct()
+head(master3b_sizes_loc_uncertainty)
+table(unique(master3b_sizes_loc_uncertainty$Releve_area))
+table(unique(master3b_sizes_loc_uncertainty$Location_uncertainty))
+# c/
+master3c <- read.csv("rdata/splotdt_glonaf_griis_master3_c.csv")
+master3c_sizes_loc_uncertainty <- master3c %>% 
+  left_join(header.oa %>% 
+              select(PlotObservationID, Releve_area, Location_uncertainty)) %>% 
+  distinct()
+head(master3c_sizes_loc_uncertainty)
+table(unique(master3c_sizes_loc_uncertainty$Releve_area))
+table(unique(master3c_sizes_loc_uncertainty$Location_uncertainty))
+
+
+# Exploration of number of records of each type ----
+master1 <- read.csv("rdata/splotdt_glonaf_griis_13.csv")
+nrow(master1)
+
+master1_exploration <- master1 %>% 
+  select("PlotObservationID", "Species", "species_status") %>% 
+  distinct() %>%
+  drop_na(species_status) %>% 
+  mutate(species_status = ifelse(species_status == "naturalized", "alien", species_status)) %>% 
+  filter(species_status == "invasive")
+nrow(master1_exploration)
+unique(master1_exploration$species_status)

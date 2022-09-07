@@ -1,0 +1,33 @@
+# This preamble lists all the packages used inthis analysis 
+
+library(dplyr)
+library(readr)
+library(magrittr)
+library(tidyr)
+library(dggridR)
+library(tidyverse)
+library(usethis)
+# for spatial matching ----
+library(sf)
+# for logarithms ----
+library(SciViews)
+#for linear mixed effects models ----
+library(lme4)
+library(nlme)
+library(car)
+library(MASS)
+library(DHARMa) # for looking at residuals 
+library(lmerTest)
+#for GRIIS 
+library(stringr)
+#Figures 
+library(ggplot2)
+library(maps)
+library(paletteer)
+library(emmeans)
+library(cowplot)
+library(scales)
+library(predictmeans)
+library(stringr)
+library(gridExtra)
+library(grid)

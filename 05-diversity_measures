@@ -1,0 +1,548 @@
+# This script creates calcultes species richness, shannon diversity index, and simpson's index and add these diversity measures to the master dataset created in script 04-
+
+load("rdata/SPLOT/sPlotOpen (2).RData")
+
+# Create dataset with data used in divesity measures calculation ---- 
+splot_diversity_data <- DT2.oa %>% 
+  select(PlotObservationID, Species, Abundance_scale, Relative_cover) %>% 
+  distinct() %>% 
+  group_by(PlotObservationID, Species) %>% # group and sum relative cover in case some species are recorded twice
+  summarise(Relative_cover=sum(Relative_cover)) %>% 
+  ungroup()
+
+# Create native communities dataset  ----
+splotdt_glonaf_griis_13 <- read_csv("rdata/splotdt_glonaf_griis_13.csv")
+
+splotdt_glonaf_griis_13_natives <- splotdt_glonaf_griis_13 %>% 
+  mutate(species_status = ifelse(is.na(species_status), "native", species_status)) %>% 
+  filter(species_status == "native") %>% 
+  select(PlotObservationID, Species) %>% 
+  distinct() %>% 
+  left_join(DT2.oa %>% 
+              select(PlotObservationID, Species, Abundance_scale, Relative_cover) %>% 
+              distinct(), 
+            by = c("PlotObservationID", "Species")) %>% 
+  group_by(PlotObservationID, Species) %>% # group and sum relative cover in case some species are recorded twice
+  summarise(Relative_cover = sum(Relative_cover)) %>% 
+  ungroup() %>% 
+  distinct() %>% 
+  filter(!is.na(Relative_cover)) 
+
+# Calculate diversity variables ----
+
+# Species richness
+SR <- splot_diversity_data %>% 
+  ungroup() %>% 
+  group_by(PlotObservationID) %>% 
+  summarise(species_richness = n_distinct(Species)) 
+
+SR_natives <- splotdt_glonaf_griis_13_natives %>% 
+  ungroup() %>% 
+  group_by(PlotObservationID) %>% 
+  summarise(species_richness_natives = n_distinct(Species)) 
+
+# Evenness measures: Shannon index, Simpson index, reverse simpson index, Berger-Parker
+
+evenness_measures <- splot_diversity_data %>% ungroup() %>% 
+  group_by(PlotObservationID) %>% 
+  summarise(N = sum(Relative_cover),
+            shannon_di = -sum((Relative_cover/sum(Relative_cover))*log(Relative_cover/sum(Relative_cover))),
+            simpson_di = 1-sum((Relative_cover/sum(Relative_cover))^2),
+            inv_simpson_di = 1/sum((Relative_cover/sum(Relative_cover))^2))
+
+evenness_measures_natives <- splotdt_glonaf_griis_13_natives %>% ungroup() %>% 
+  group_by(PlotObservationID) %>% 
+  summarise(N_natives = sum(Relative_cover),
+            shannon_di_natives = -sum((Relative_cover/sum(Relative_cover))*log(Relative_cover/sum(Relative_cover))),
+            simpson_di_natives = 1-sum((Relative_cover/sum(Relative_cover))^2),
+            inv_simpson_di_natives = 1/sum((Relative_cover/sum(Relative_cover))^2))
+
+
+# Berger-Parker index and most abundant species
+# The Berger-Parker was not included in the final analysis but this may be of use for future studies
+BG <- splot_diversity_data %>% 
+  ungroup() %>% 
+  group_by(PlotObservationID) %>% 
+  filter(Relative_cover == max(Relative_cover)) %>% #PROBLEM: In some plots, some species are equally the most abundant
+  rename(most_abundant_species = Species, BG = Relative_cover) %>% 
+  select(PlotObservationID, BG, most_abundant_species)
+
+# Join all diversity variables
+splot_diversity <- splotdt_glonaf_griis_13 %>%  
+  select(PlotObservationID) %>% 
+  left_join(SR) %>%
+  left_join(evenness_measures)  %>% 
+  left_join(BG) %>% 
+  distinct()
+
+splot_diversity_natives <- splotdt_glonaf_griis_13_natives %>%  
+  select(PlotObservationID) %>% 
+  left_join(SR_natives) %>% 
+  left_join(evenness_measures_natives, 
+            by = c("PlotObservationID")) %>% 
+  distinct()
+
+# A/ SR and evenness ----
+splot_glonaf_griis_master1_a <- read_csv("rdata/splotdt_glonaf_griis_master1_a.csv")
+
+splot_master2_a <- splot_glonaf_griis_master1_a %>% 
+  # add diversity measures
+  left_join(splot_diversity %>% 
+              select(-BG, -most_abundant_species)) %>% 
+  left_join(splot_diversity_natives, 
+            by = c("PlotObservationID")) %>% 
+  distinct() %>% #2,872 rows, 1,482 plots; some plots appear more than once because there are sometimes more than one most abundant species
+  # add biome, Latitude, Longitude
+  left_join(header.oa %>% 
+              select(PlotObservationID, Biome, Latitude, Longitude)) %>% #2,872 rows, 1,482 plots
+  # add abundance scale
+  left_join(DT2.oa %>% 
+              select(PlotObservationID, Abundance_scale) %>%
+              distinct() %>% 
+              group_by(PlotObservationID) %>% 
+              distinct() %>% 
+              # There are more than one abundance scale per plot (strange) (as shown in exploration 10-splot_global_exploration script) 
+              # so need to collapse these values together
+              mutate(abundance_scale = paste(Abundance_scale, collapse = "")) %>% 
+              select(-Abundance_scale) %>% 
+              distinct()) %>%
+  # Replace all evenness variables with NA when abundance scale is presence/absence (pa)
+  mutate(shannon_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,shannon_di)) %>% 
+  mutate(simpson_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,simpson_di)) %>% 
+  mutate(inv_simpson_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,inv_simpson_di)) %>% 
+  mutate(shannon_di_natives = ifelse(grepl("pa", c(abundance_scale)), NA_character_, shannon_di_natives)) %>% 
+  mutate(simpson_di_natives = ifelse(grepl("pa", c(abundance_scale)), NA_character_, simpson_di_natives)) %>% 
+  mutate(inv_simpson_di_natives = ifelse(grepl("pa", c(abundance_scale)), NA_character_, inv_simpson_di_natives)) %>% 
+  distinct() %>% 
+  select(-abundance_scale)
+# check presence/abscence cover data 
+nrow(splot_master2_a) # 1,615 rows
+length(unique(splot_master2_a$PlotObservationID)) # 1,615 plots --> No plots contained presence/abscence data 
+
+# A/ Final master dataset ----
+# rename non-natives = A, only natives = N
+splot_master3_a <- splot_master2_a %>% 
+  mutate(plot_status = ifelse(plot_status == "only natives","N", plot_status)) %>% 
+  mutate(plot_status = ifelse(plot_status == "non-natives","A", plot_status)) %>% 
+  distinct() %>% 
+  select("cell", "PlotObservationID", "plot_status", "species_richness", "species_richness_natives", "N", "shannon_di", "simpson_di", "inv_simpson_di", "shannon_di_natives", "simpson_di_natives", "inv_simpson_di_natives", "Biome") %>% 
+  rename(biome = Biome)
+
+# Export datasets
+write.csv(splot_master2_a, "rdata/splotdt_glonaf_griis_master2_a.csv", row.names=FALSE)
+write.csv(splot_master3_a, "rdata/splotdt_glonaf_griis_master3_a.csv", row.names=FALSE)
+
+
+# B/ SR ----
+splot_glonaf_griis_master1_b <- read_csv("rdata/splotdt_glonaf_griis_master1_b.csv")
+
+splot_master2_b <- splot_glonaf_griis_master1_b %>% 
+  # add diversity measures
+  left_join(splot_diversity %>% 
+              select(-BG, -most_abundant_species)) %>% 
+  left_join(splot_diversity_natives, 
+            by = c("PlotObservationID")) %>% 
+  distinct() %>% #2,872 rows, 1,482 plots; some plots appear more than once because there are sometimes more than one most abundant species
+  # add biome, Latitude, Longitude
+  left_join(header.oa %>% 
+              select(PlotObservationID, Biome, Latitude, Longitude)) %>% #2,872 rows, 1,482 plots
+  # add abundance scale
+  left_join(DT2.oa %>% 
+              select(PlotObservationID, Abundance_scale) %>%
+              distinct() %>% 
+              group_by(PlotObservationID) %>% 
+              distinct() %>% 
+              # There are more than one abundance scale per plot (strange) (as shown in exploration 10-splot_global_exploration script) 
+              # so need to collapse these values together
+              mutate(abundance_scale = paste(Abundance_scale, collapse = "")) %>% 
+              select(-Abundance_scale) %>% 
+              distinct()) %>%
+  # Replace all evenness variables with NA when abundance scale is presence/absence (pa)
+  mutate(shannon_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,shannon_di)) %>% 
+  mutate(simpson_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,simpson_di)) %>% 
+  mutate(inv_simpson_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,inv_simpson_di)) %>% 
+  mutate(shannon_di_natives = ifelse(grepl("pa", c(abundance_scale)), NA_character_, shannon_di_natives)) %>% 
+  mutate(simpson_di_natives = ifelse(grepl("pa", c(abundance_scale)), NA_character_, simpson_di_natives)) %>% 
+  mutate(inv_simpson_di_natives = ifelse(grepl("pa", c(abundance_scale)), NA_character_, inv_simpson_di_natives)) %>% 
+  distinct() %>% 
+  select(-abundance_scale) %>% 
+  mutate(plot_status = ifelse(plot_status == "only natives", "N", plot_status)) %>% 
+  mutate(plot_status = ifelse(plot_status == "invasives", "I", plot_status)) %>% 
+  distinct()
+
+# B/ Final master dataset (SR) ----
+# rename invasives = I, only natives = N
+splot_master3_b <- splot_master2_b %>% 
+  select("cell", "PlotObservationID", "plot_status", "species_richness", "species_richness_natives", "Biome") %>% 
+  rename(biome = Biome) %>% 
+  replace_na(list(species_richness_natives = 0))
+
+# B/ Evenness ----
+
+splot_master2_b_evenness <- splot_master2_b %>% 
+  filter(!is.na(simpson_di))
+head(splot_master2_b_evenness)
+nrow(splot_master2_b_evenness) # 570 rows
+length(unique(splot_master2_b_evenness$PlotObservationID)) # 570 plots 
+length(unique(splot_master2_b_evenness$cell)) # 37 cells 
+
+# B/ Final master dataset (evenness) ----
+splot_master3_b_evenness <- splot_master2_b_evenness %>% 
+  select("cell", "PlotObservationID", "plot_status", "shannon_di", "simpson_di", "inv_simpson_di", "Biome", ) %>% 
+  distinct() %>% 
+  rename(biome = Biome)
+
+# Native communities
+splot_master3_b_evenness_natives <- splot_master2_b_evenness %>% 
+  select("cell", "PlotObservationID", "plot_status", "shannon_di_natives", "simpson_di_natives", "inv_simpson_di_natives", "Biome", ) %>% 
+  filter(!is.na(shannon_di_natives)) %>% 
+  distinct() %>% 
+  rename(biome = Biome)
+
+# Export 
+write.csv(splot_master3_b, "rdata/splotdt_glonaf_griis_master3_b.csv", row.names=FALSE)
+write.csv(splot_master2_b_evenness, "rdata/splotdt_glonaf_griis_master2_b_evenness.csv", row.names=FALSE)
+write.csv(splot_master3_b_evenness, "rdata/splotdt_glonaf_griis_master3_b_evenness.csv", row.names=FALSE)
+write.csv(splot_master3_b_evenness_natives, "rdata/splotdt_glonaf_griis_master3_b_evenness_natives.csv", row.names=FALSE)
+
+
+
+# C/ SR and evenness  ----
+
+splot_glonaf_griis_master1_c <- read_csv("rdata/splotdt_glonaf_griis_master1_c.csv")
+
+splot_master2_c <- splot_glonaf_griis_master1_c %>% 
+  # add diversity measures
+  left_join(splot_diversity %>% 
+              select(-BG, -most_abundant_species)) %>% 
+  left_join(splot_diversity_natives, 
+            by = c("PlotObservationID")) %>% 
+  distinct() %>% #2,872 rows, 1,482 plots; some plots appear more than once because there are sometimes more than one most abundant species
+  # add biome, Latitude, Longitude
+  left_join(header.oa %>% 
+              select(PlotObservationID, Biome, Latitude, Longitude)) %>% #2,872 rows, 1,482 plots
+  # add abundance scale
+  left_join(DT2.oa %>% 
+              select(PlotObservationID, Abundance_scale) %>%
+              distinct() %>% 
+              group_by(PlotObservationID) %>% 
+              distinct() %>% 
+              # There are more than one abundance scale per plot (strange) (as shown in exploration 10-splot_global_exploration script) 
+              # so need to collapse these values together
+              mutate(abundance_scale = paste(Abundance_scale, collapse = "")) %>% 
+              select(-Abundance_scale) %>% 
+              distinct()) %>%
+  # Replace all evenness variables with NA when abundance scale is presence/absence (pa)
+  mutate(shannon_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,shannon_di)) %>% 
+  mutate(simpson_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,simpson_di)) %>% 
+  mutate(inv_simpson_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,inv_simpson_di)) %>% 
+  mutate(shannon_di_natives = ifelse(grepl("pa", c(abundance_scale)), NA_character_, shannon_di_natives)) %>% 
+  mutate(simpson_di_natives = ifelse(grepl("pa", c(abundance_scale)), NA_character_, simpson_di_natives)) %>% 
+  mutate(inv_simpson_di_natives = ifelse(grepl("pa", c(abundance_scale)), NA_character_, inv_simpson_di_natives)) %>% 
+  distinct() %>% 
+  select(-abundance_scale)
+
+# C/ Final master dataset ----
+# rename non-natives = A, only invasives = I
+splot_master3_c <- splot_master2_c %>% 
+  mutate(plot_status = ifelse(plot_status == "non-natives","A",plot_status)) %>% 
+  mutate(plot_status = ifelse(plot_status == "invasives","I",plot_status)) %>%  
+  distinct() %>% 
+  select("cell", "PlotObservationID", "plot_status", "species_richness", "species_richness_natives", "N", "shannon_di", "simpson_di", "inv_simpson_di", "shannon_di_natives", "simpson_di_natives", "inv_simpson_di_natives", "Biome") %>% 
+  rename(biome = Biome)
+unique(is.na(splot_master3_c$shannon_di_natives)) # no NAs --> no need for a separate dataset 
+
+# Export datasets
+write.csv(splot_master2_c, "rdata/splotdt_glonaf_griis_master2_c.csv", row.names=FALSE)
+write.csv(splot_master3_c, "rdata/splotdt_glonaf_griis_master3_c.csv", row.names=FALSE)
+
+
+
+
+# Datasets with Berger-Parker index  ---- 
+# The flowwing code includes BG in datasets for furhter analysis. 
+# It was not not used in the analysis but may be of use for future work.
+
+# A/ Species richness and evenness
+
+# Join diversity measures to master dataset
+
+splot_glonaf_griis_master1_a <- read_csv("rdata/splotdt_glonaf_griis_master1_a.csv")
+head(splot_glonaf_griis_master1_a)
+nrow(splot_glonaf_griis_master1_a) #1,615 rows
+length(unique(splot_glonaf_griis_master1_a$PlotObservationID)) # 1,615 plots
+
+splot_master2_a <- splot_glonaf_griis_master1_a %>% 
+  # add diversity measures
+  left_join(splot_diversity) %>% 
+  distinct() %>% #2,872 rows, 1,482 plots; some plots appear more than once because there are sometimes more than one most abundant species
+  # add biome, Latitude, Longitude
+  left_join(header.oa %>% 
+              select(PlotObservationID, Biome, Latitude, Longitude)) %>% #2,872 rows, 1,482 plots
+  # add abundance scale
+  left_join(DT2.oa %>% 
+              select(PlotObservationID, Abundance_scale) %>%
+              distinct() %>% 
+              group_by(PlotObservationID) %>% 
+              distinct() %>% 
+              # There are more than one abundance scale per plot (strange) (as shown in exploration 10-splot_global_exploration script) 
+              # so need to collapse these values together
+              mutate(abundance_scale = paste(Abundance_scale, collapse = "")) %>% 
+              select(-Abundance_scale) %>% 
+              distinct()) %>%
+  # Replace all evenness variables with NA when abundance scale is presence/absence (pa)
+  mutate(shannon_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,shannon_di)) %>% 
+  mutate(simpson_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,simpson_di)) %>% 
+  mutate(inv_simpson_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,inv_simpson_di)) %>% 
+  mutate(BG = ifelse(grepl("pa", c(abundance_scale)),NA_character_,BG)) %>% 
+  mutate(most_abundant_species = ifelse(grepl("pa", c(abundance_scale)),NA_character_,most_abundant_species)) %>%
+  distinct() %>% 
+  #add status of most abundant species
+  left_join(splotdt_glonaf_griis_13 %>% 
+              replace_na(list(species_status = "native")) %>% # replace NAs with "native"
+              select(PlotObservationID, Species, species_status) %>% 
+              distinct(),
+            by=c("PlotObservationID", "most_abundant_species"="Species")) %>%
+  distinct() %>% 
+  rename(most_abundant_species_status = species_status) %>% 
+  select(-abundance_scale)
+head(splot_master2_a)
+# check 
+nrow(splot_master2_a) # 2,168 rows
+length(unique(splot_master2_a$PlotObservationID)) # 1,615 plots
+
+# Master 3: 1 row per plot: take out most_abundant_species and most_abundant_species_status
+splot_master3_a <- splot_master2_a %>% 
+  select(-most_abundant_species) %>% 
+  # Some plots are equally dominated by non-native and native species --> these are called "duplicate_plots" here
+  # Following code ensures that each plot only appears once and considers plots dominated by both non-native and native species as dominated by non-native
+  group_by(PlotObservationID) %>% 
+  mutate(most_abundant_species_status = ifelse(most_abundant_species_status == "native", "N", most_abundant_species_status)) %>% 
+  mutate(most_abundant_species_status = ifelse(most_abundant_species_status == "invasive", "I", most_abundant_species_status)) %>% 
+  mutate(most_abundant_species_status = ifelse(most_abundant_species_status == "alien", "A", most_abundant_species_status)) %>%
+  mutate(most_abundant_species_status = ifelse(most_abundant_species_status == "naturalized", "A", most_abundant_species_status)) %>%
+  mutate(most_abundant_species_status = paste(most_abundant_species_status, collapse = " ")) %>% 
+  mutate(most_abundant_species_status = ifelse(grepl("I", most_abundant_species_status), "I", most_abundant_species_status)) %>% 
+  mutate(most_abundant_species_status = ifelse(grepl("A", most_abundant_species_status), "A", most_abundant_species_status)) %>% 
+  mutate(most_abundant_species_status = ifelse(grepl("N", most_abundant_species_status), "N", most_abundant_species_status)) %>% 
+  distinct()  %>% 
+  # rename non-natives = A, only natives = N
+  mutate(plot_status = ifelse(plot_status=="only natives","N",plot_status)) %>% 
+  mutate(plot_status = ifelse(plot_status=="non-natives","A",plot_status)) %>% 
+  distinct() %>% 
+  select("cell", "PlotObservationID", "plot_status", "species_richness", "N", "shannon_di", "simpson_di", "inv_simpson_di", "BG", "Biome", "most_abundant_species_status") %>% 
+  rename(biome = Biome)
+nrow(splot_master3_a) # 1,615 rows
+length(unique(splot_master3_a$PlotObservationID)) # 1,615 plots
+unique(splot_master3_a$plot_status) # "N" "A"
+head(splot_master3_a)
+# Export datasets
+write.csv(splot_master2_a, "rdata/splotdt_glonaf_griis_master2_a.csv", row.names=FALSE)
+write.csv(splot_master3_a, "rdata/splotdt_glonaf_griis_master3_a.csv", row.names=FALSE)
+
+
+# B/ Species richness
+
+# Join diversity measures to master dataset
+
+splot_glonaf_griis_master1_b <- read_csv("rdata/splotdt_glonaf_griis_master1_b.csv")
+head(splot_glonaf_griis_master1_b)
+nrow(splot_glonaf_griis_master1_b) #664 rows
+length(unique(splot_glonaf_griis_master1_b$PlotObservationID)) # 664 plots
+splotdt_glonaf_griis <- read.csv("Rdata/splotdt_glonaf_griis.csv")
+head(splotdt_glonaf_griis)
+nrow(splotdt_glonaf_griis) #1,825,995 rows
+
+
+splot_master2_b <- splot_glonaf_griis_master1_b %>% 
+  # add diversity measures
+  left_join(splot_diversity) %>% 
+  distinct() %>% #2,872 rows, 1,482 plots; some plots appear more than once because there are sometimes more than one most abundant species
+  # add biome, Latitude, Longitude
+  left_join(header.oa %>% 
+              select(PlotObservationID, Biome, Latitude, Longitude)) %>% #2,872 rows, 1,482 plots
+  # add abundance scale
+  left_join(DT2.oa %>% 
+              select(PlotObservationID, Abundance_scale) %>%
+              distinct() %>% 
+              group_by(PlotObservationID) %>% 
+              distinct() %>% 
+              # There are more than one abundance scale per plot (strange) (as shown in exploration 10-splot_global_exploration script) 
+              # so need to collapse these values together
+              mutate(abundance_scale = paste(Abundance_scale,collapse="")) %>% 
+              select(-Abundance_scale) %>% 
+              distinct()) %>%
+  # Replace all evenness variables with NA when abundance scale is presence/absence (pa)
+  mutate(shannon_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,shannon_di)) %>% 
+  mutate(simpson_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,simpson_di)) %>% 
+  mutate(inv_simpson_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,inv_simpson_di)) %>% 
+  mutate(shannon_di_natives = ifelse(grepl("pa", c(abundance_scale)),NA_character_,shannon_di_natives)) %>% 
+  mutate(simpson_di_natives = ifelse(grepl("pa", c(abundance_scale)),NA_character_,simpson_di_natives)) %>% 
+  mutate(inv_simpson_di_natives = ifelse(grepl("pa", c(abundance_scale)),NA_character_,inv_simpson_di_natives)) %>% 
+  mutate(BG = ifelse(grepl("pa", c(abundance_scale)),NA_character_,BG)) %>% 
+  mutate(most_abundant_species = ifelse(grepl("pa", c(abundance_scale)),NA_character_,most_abundant_species)) %>%
+  distinct() %>% 
+  #add status of most abundant species
+  left_join(splotdt_glonaf_griis %>% 
+              replace_na(list(species_status="native")) %>% # replace NAs with "native"
+              select(PlotObservationID, Species, species_status) %>% 
+              distinct(),
+            by=c("PlotObservationID", "most_abundant_species"="Species")) %>%
+  distinct() %>% 
+  rename(most_abundant_species_status=species_status) %>% 
+  select(-abundance_scale)
+head(splot_master2_b)
+# check 
+nrow(splot_master2_b) # 955 rows
+length(unique(splot_master2_b$PlotObservationID)) # 664 plots
+unique(splot_master2_b$most_abundant_species_status) #  NA "native" "invasive" "naturalized" 
+
+# Master 3: 1 row per plot: take out most_abundant_species and most_abundant_species_status
+splot_master3_b <- splot_master2_b %>% 
+  select(-most_abundant_species) %>% 
+  select(-most_abundant_species_status) %>% 
+  distinct() %>% 
+  # rename non-natives = A, only natives = N
+  mutate(plot_status = ifelse(plot_status=="only natives","N",plot_status)) %>% 
+  mutate(plot_status = ifelse(plot_status=="invasives","I",plot_status)) %>% 
+  distinct() %>% 
+  select("cell", "PlotObservationID", "plot_status", "species_richness", "species_richness_natives", "N", "shannon_di", "simpson_di", "inv_simpson_di", "shannon_di_natives", "simpson_di_natives", "inv_simpson_di_natives", "BG", "Biome") %>% 
+  rename(biome=Biome)
+nrow(splot_master3_b) # 664 rows
+length(unique(splot_master3_b$PlotObservationID)) # 664 plots
+length(unique(splot_master3_b$cell)) # 40 cells
+
+unique(splot_master3_b$plot_status) # "N" "I"
+
+# Export datasets
+write.csv(splot_master2_b, "rdata/splotdt_glonaf_griis_master2_b.csv", row.names=FALSE)
+write.csv(splot_master3_b, "rdata/splotdt_glonaf_griis_master3_b.csv", row.names=FALSE)
+
+
+# B/ Evenness 
+
+splot_master2_b_evenness <- splot_master2_b %>% 
+  filter(!is.na(simpson_di))
+head(splot_master2_b_evenness)
+nrow(splot_master2_b_evenness) # 861 rows
+length(unique(splot_master2_b_evenness$PlotObservationID)) # 570 plots 
+length(unique(splot_master2_b_evenness$cell)) # 37 cells 
+# Export 
+write.csv(splot_master2_b_evenness, "rdata/splotdt_glonaf_griis_master2_b_evenness.csv", row.names=FALSE)
+
+# rename most abundant species status
+splot_master3_b_evenness <- splot_master2_b %>% 
+  filter(!is.na(simpson_di)) %>% 
+  distinct() %>% 
+  mutate(most_abundant_species_status = ifelse(most_abundant_species_status == "native", "N", most_abundant_species_status)) %>% 
+  mutate(most_abundant_species_status = ifelse(most_abundant_species_status == "invasive", "I", most_abundant_species_status)) %>% 
+  mutate(most_abundant_species_status = ifelse(most_abundant_species_status == "alien", "A", most_abundant_species_status)) %>%
+  mutate(most_abundant_species_status = ifelse(most_abundant_species_status == "naturalized", "A", most_abundant_species_status)) %>%
+  select("cell", "PlotObservationID", "plot_status", "species_richness", "species_richness_natives", "N", "shannon_di", "simpson_di", "inv_simpson_di", "shannon_di_natives", "simpson_di_natives", "inv_simpson_di_natives", "BG", "Biome", "most_abundant_species_status") %>% 
+  rename(biome = Biome) %>% 
+  # Some plots are equally dominated by non-native and native species --> these are called "duplicate_plots" here
+  # Following code ensures that each plot only appears once and considers the following: 
+  # plots dominated by both non-native and native species as dominated by non-native
+  # plots dominated by both non-native and invasive species as dominated by invasive
+  # plots dominated by both invasive and native species as dominated by invasive
+  group_by(PlotObservationID) %>% 
+  mutate(most_abundant_species_status = paste(most_abundant_species_status, collapse = " ")) %>% 
+  mutate(most_abundant_species_status = ifelse(grepl("I", most_abundant_species_status), "I", most_abundant_species_status)) %>% 
+  mutate(most_abundant_species_status = ifelse(grepl("A", most_abundant_species_status), "A", most_abundant_species_status)) %>% 
+  mutate(most_abundant_species_status = ifelse(grepl("N", most_abundant_species_status), "N", most_abundant_species_status)) %>% 
+  distinct()
+head(splot_master3_b_evenness)
+# Check:
+nrow(splot_master3_b_evenness) # 570 rows 
+length(unique(splot_master3_b_evenness$PlotObservationID)) # 570 plots 
+length(unique(splot_master3_b_evenness$cell)) # 37 cells 
+unique(splot_master3_b_evenness$most_abundant_species_status) # "A" "N" "I" 
+# Export: 
+write.csv(splot_master3_b_evenness, "rdata/splotdt_glonaf_griis_master3_b_evenness.csv", row.names=FALSE)  
+
+
+
+# C/ Species richness
+
+# Join diversity measures to master dataset
+
+splot_glonaf_griis_master1_c <- read_csv("rdata/splotdt_glonaf_griis_master1_c.csv")
+head(splot_glonaf_griis_master1_c)
+nrow(splot_glonaf_griis_master1_c) #331 rows
+length(unique(splot_glonaf_griis_master1_c$PlotObservationID)) # 331 plots
+splotdt_glonaf_griis <- read.csv("Rdata/splotdt_glonaf_griis.csv")
+head(splotdt_glonaf_griis)
+nrow(splotdt_glonaf_griis) #1,825,995 rows
+
+
+splot_master2_c <- splot_glonaf_griis_master1_c %>% 
+  # add diversity measures
+  left_join(splot_diversity) %>% 
+  distinct() %>% #2,872 rows, 1,482 plots; some plots appear more than once because there are sometimes more than one most abundant species
+  # add biome, Latitude, Longitude
+  left_join(header.oa %>% 
+              select(PlotObservationID, Biome, Latitude, Longitude)) %>% #2,872 rows, 1,482 plots
+  # add abundance scale
+  left_join(DT2.oa %>% 
+              select(PlotObservationID, Abundance_scale) %>%
+              distinct() %>% 
+              group_by(PlotObservationID) %>% 
+              distinct() %>% 
+              # There are more than one abundance scale per plot (strange) (as shown in exploration 10-splot_global_exploration script) 
+              # so need to collapse these values together
+              mutate(abundance_scale = paste(Abundance_scale,collapse="")) %>% 
+              select(-Abundance_scale) %>% 
+              distinct()) %>%
+  # Replace all evenness variables with NA when abundance scale is presence/absence (pa)
+  mutate(shannon_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,shannon_di)) %>% 
+  mutate(simpson_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,simpson_di)) %>% 
+  mutate(inv_simpson_di = ifelse(grepl("pa", c(abundance_scale)),NA_character_,inv_simpson_di)) %>% 
+  mutate(shannon_di_natives = ifelse(grepl("pa", c(abundance_scale)),NA_character_,shannon_di_natives)) %>% 
+  mutate(simpson_di_natives = ifelse(grepl("pa", c(abundance_scale)),NA_character_,simpson_di_natives)) %>% 
+  mutate(inv_simpson_di_natives = ifelse(grepl("pa", c(abundance_scale)),NA_character_,inv_simpson_di_natives)) %>% 
+  mutate(BG = ifelse(grepl("pa", c(abundance_scale)),NA_character_,BG)) %>% 
+  mutate(most_abundant_species = ifelse(grepl("pa", c(abundance_scale)),NA_character_,most_abundant_species)) %>%
+  distinct() %>% 
+  #add status of most abundant species
+  left_join(splotdt_glonaf_griis %>% 
+              replace_na(list(species_status="native")) %>% # replace NAs with "native"
+              select(PlotObservationID, Species, species_status) %>% 
+              distinct(),
+            by=c("PlotObservationID", "most_abundant_species"="Species")) %>%
+  distinct() %>% 
+  rename(most_abundant_species_status=species_status) %>% 
+  select(-abundance_scale)
+head(splot_master2_c)
+# check 
+nrow(splot_master2_c) # 420 rows
+length(unique(splot_master2_c$PlotObservationID)) # 331 plots
+unique(splot_master2_c$most_abundant_species_status) # "native" "invasive" "naturalized" "alien"
+
+# Master 3: 1 row per plot: take out most_abundant_species and most_abundant_species_status
+splot_master3_c <- splot_master2_c %>% 
+  select(-most_abundant_species) %>% 
+  group_by(PlotObservationID) %>% 
+  mutate(most_abundant_species_status = ifelse(most_abundant_species_status == "native", "N", most_abundant_species_status)) %>% 
+  mutate(most_abundant_species_status = ifelse(most_abundant_species_status == "invasive", "I", most_abundant_species_status)) %>% 
+  mutate(most_abundant_species_status = ifelse(most_abundant_species_status == "alien", "A", most_abundant_species_status)) %>%
+  mutate(most_abundant_species_status = ifelse(most_abundant_species_status == "naturalized", "A", most_abundant_species_status)) %>%
+  mutate(most_abundant_species_status = paste(most_abundant_species_status, collapse = " ")) %>% 
+  mutate(most_abundant_species_status = ifelse(grepl("I", most_abundant_species_status), "I", most_abundant_species_status)) %>% 
+  mutate(most_abundant_species_status = ifelse(grepl("A", most_abundant_species_status), "A", most_abundant_species_status)) %>% 
+  mutate(most_abundant_species_status = ifelse(grepl("N", most_abundant_species_status), "N", most_abundant_species_status)) %>% 
+  distinct() %>% 
+  # rename non-natives = A, only natives = N
+  mutate(plot_status = ifelse(plot_status == "non-natives","A",plot_status)) %>% 
+  mutate(plot_status = ifelse(plot_status == "invasives","I",plot_status)) %>% 
+  distinct() %>% 
+  select("cell", "PlotObservationID", "plot_status", "species_richness", "species_richness_natives", "N", "shannon_di", "simpson_di", "inv_simpson_di", "shannon_di_natives", "simpson_di_natives", "inv_simpson_di_natives", "BG", "Biome", "most_abundant_species_status") %>% 
+  rename(biome=Biome)
+nrow(splot_master3_c) # 331 rows
+length(unique(splot_master3_c$PlotObservationID)) # 331 plots
+length(unique(splot_master3_c$cell)) # 26 cells 
+unique(splot_master3_c$plot_status) # "A" "I"
+head(splot_master3_c)
+
+# Export datasets
+write.csv(splot_master2_c, "rdata/splotdt_glonaf_griis_master2_c.csv", row.names=FALSE)
+write.csv(splot_master3_c, "rdata/splotdt_glonaf_griis_master3_c.csv", row.names=FALSE)

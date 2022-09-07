@@ -1,0 +1,341 @@
+# This scripts selects plots for analyses A, B and C, and explores different minimum number of plots per cell.
+
+load("rdata/SPLOT/sPlotOpen (2).RData")
+
+splotdt_glonaf_griis_13 <- read_csv("rdata/splotdt_glonaf_griis_13.csv")
+
+# Insert the status of the plot: "non-natives" or "only natives" ----
+splotdt_glonaf_griis_13_reduced <- splotdt_glonaf_griis_13 %>% 
+  select(PlotObservationID, species_status, cell) %>% 
+  distinct() %>% #Use distinct to only have two entries maximum per PlotObservationID, differentiated by the species_status. 
+  group_by(PlotObservationID) %>% 
+  mutate(plot_status = paste(species_status,collapse=" ")) %>% 
+  select(-species_status) %>% 
+  distinct() %>% 
+  mutate(plot_status = ifelse(plot_status == "NA", "only natives", plot_status)) %>% 
+  # Insert the status of the plot: "invasives"
+  mutate(plot_status = ifelse(grepl("invasive", 
+                                    c(plot_status)), 
+                              "invasives", plot_status)) %>% 
+  mutate(plot_status = ifelse(grepl("alien", 
+                                    c(plot_status)), 
+                              "non-natives", plot_status)) %>% 
+  mutate(plot_status = ifelse(grepl("naturalized", 
+                                    c(plot_status)), 
+                              "non-natives", plot_status))
+
+# Select of plots of most frequent size inside each cell ----
+
+splotdt_glonaf_griis_13_reduced_size <- splotdt_glonaf_griis_13_reduced %>% 
+  left_join(header.oa %>% 
+              select(PlotObservationID, Releve_area))
+
+splotdt_glonaf_griis_13_reduced1 <- splotdt_glonaf_griis_13_reduced %>% # add size of plots to the splot+glonaf dataframe
+  left_join(header.oa %>% 
+              select(PlotObservationID, Releve_area) %>%
+              distinct(), 
+            by=c("PlotObservationID")) %>%
+  # Find out most frequent size of plot inside each cell
+  group_by(cell) %>% 
+  count(Releve_area) %>% #count how many different sizes of plots there are in a cell
+  group_by(cell) %>% 
+  filter(n==max(n)) %>% #keep only most frequent sizes in each cell
+  filter(n!=1) %>% # remove cells that do not have 2 or more plots of the same size
+  group_by(cell) %>% 
+  slice(1) %>% #keep only the first one of the most frequent size of plots when there are multiple most frequent plot sizes
+  rename(most_frequent_area=Releve_area) %>% 
+  # Select plots with the most frequent size only
+  select(-n) %>% 
+  left_join(splotdt_glonaf_griis_13_reduced_size) %>%  
+  filter(Releve_area==most_frequent_area) %>% 
+  select(PlotObservationID, plot_status, cell, Releve_area) 
+
+# Select comparable cells ----
+# Select cells which have a minimum number of certain types of plots 
+
+# A/ Non-natives vs. natives: 4 plots of each type per cell  ----
+splotdt_glonaf_griis_13_comparablecells_a <- left_join(splotdt_glonaf_griis_13_reduced1,
+                                                       left_join(
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of plots per cell (i.e. how many times does one cell come up in the dataframe)
+                                                           ungroup() %>% 
+                                                           count(cell),
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of nonnatives/non nonnatives plots within each cell
+                                                           ungroup() %>% 
+                                                           group_by(cell) %>% 
+                                                           count(nplots=plot_status) %>% 
+                                                           spread(key=nplots,value=n) 
+                                                       )
+) %>% 
+  group_by(cell) %>% 
+  select(-PlotObservationID) %>% 
+  distinct() %>% 
+  mutate(cell_type=paste(plot_status,collapse=" ")) %>% 
+  select(-plot_status) %>%  
+  distinct() %>% 
+  rename(n_total=n, n_non_natives=`non-natives`, n_only_natives=`only natives`, n_invasives=invasives) %>%  
+  mutate(n_non_natives = ifelse(is.na(n_non_natives), 0, n_non_natives)) %>% # replace NAs in n_non_natives by 0 
+  mutate(n_invasives = ifelse(is.na(n_invasives), 0, n_invasives)) %>% 
+  # This gives a dataframe with "cell" "Releve_area" "n_total" "n_nonnatives" "n_only_natives" "cell_type"; 7,762 rows 
+  # Select cells that contain both 'nonnatives' and 'only native' plots, and at least 5 of each type
+  filter(cell_type != "non-natives") %>% 
+  filter(cell_type != "only natives") %>% 
+  filter(cell_type != "invasives") %>%
+  filter(n_non_natives >= 4) %>% 
+  filter(n_only_natives >= 4)
+nrow(splotdt_glonaf_griis_13_comparablecells_a) # 82 cells 
+
+# Master A dataset containing all plots IDs to be analysed
+splotdt_glonaf_griis_13_comparable_plots_a <- splotdt_glonaf_griis_13_comparablecells_a %>% 
+  left_join(splotdt_glonaf_griis_13_reduced1) %>% 
+  filter(plot_status != "invasives") %>% 
+  select(cell,PlotObservationID,plot_status,Releve_area, n_total,n_non_natives,n_only_natives, n_invasives)
+
+
+# B/ Invasives vs. natives: 4 plots of each type per cell ----
+splotdt_glonaf_griis_13_comparablecells_b <- left_join(splotdt_glonaf_griis_13_reduced1,
+                                                       left_join(
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of plots per cell (i.e. how many times does one cell come up in the dataframe)
+                                                           ungroup() %>% 
+                                                           count(cell),
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of nonnatives/non nonnatives plots within each cell
+                                                           ungroup() %>% 
+                                                           group_by(cell) %>% 
+                                                           count(nplots=plot_status) %>% 
+                                                           spread(key=nplots,value=n) 
+                                                       )
+) %>% 
+  group_by(cell) %>% 
+  select(-PlotObservationID) %>% 
+  distinct() %>% 
+  mutate(cell_type=paste(plot_status,collapse=" ")) %>% 
+  select(-plot_status) %>%  
+  distinct() %>% 
+  rename(n_total=n, n_non_natives=`non-natives`, n_only_natives=`only natives`, n_invasives=invasives) %>%  
+  mutate(n_non_natives = ifelse(is.na(n_non_natives), 0, n_non_natives)) %>% # replace NAs in n_non_natives by 0 
+  mutate(n_invasives = ifelse(is.na(n_invasives), 0, n_invasives)) %>% 
+  # This gives a dataframe with "cell" "Releve_area" "n_total" "n_nonnatives" "n_only_natives" "cell_type"; 7,762 rows 
+  # Select cells that contain both 'nonnatives' and 'only native' plots, and at least 5 of each type
+  filter(cell_type != "non-natives") %>% 
+  filter(cell_type != "only natives") %>% 
+  filter(cell_type != "invasives") %>%
+  filter(n_invasives >= 4) %>% 
+  filter(n_only_natives >= 4)
+nrow(splotdt_glonaf_griis_13_comparablecells_b) # 40 cells 
+
+# Master B dataset containing all plots IDs to be analysed
+splotdt_glonaf_griis_13_comparable_plots_b <- splotdt_glonaf_griis_13_comparablecells_b %>% 
+  left_join(splotdt_glonaf_griis_13_reduced1) %>% 
+  filter(plot_status != "non-natives") %>% 
+  select(cell,PlotObservationID,plot_status,Releve_area, n_total,n_non_natives,n_only_natives, n_invasives)
+
+
+# C/ Invasives vs. non-natives: 3 plots of each type per cell (supplementary) ----
+splotdt_glonaf_griis_13_comparablecells_c <- left_join(splotdt_glonaf_griis_13_reduced1,
+                                                       left_join(
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of plots per cell (i.e. how many times does one cell come up in the dataframe)
+                                                           ungroup() %>% 
+                                                           count(cell),
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of nonnatives/non nonnatives plots within each cell
+                                                           ungroup() %>% 
+                                                           group_by(cell) %>% 
+                                                           count(nplots=plot_status) %>% 
+                                                           spread(key=nplots,value=n) 
+                                                       )
+) %>% 
+  group_by(cell) %>% 
+  select(-PlotObservationID) %>% 
+  distinct() %>% 
+  mutate(cell_type=paste(plot_status,collapse=" ")) %>% 
+  select(-plot_status) %>%  
+  distinct() %>% 
+  rename(n_total=n, n_non_natives=`non-natives`, n_only_natives=`only natives`, n_invasives=invasives) %>%  
+  mutate(n_non_natives = ifelse(is.na(n_non_natives), 0, n_non_natives)) %>% # replace NAs in n_non_natives by 0 
+  mutate(n_invasives = ifelse(is.na(n_invasives), 0, n_invasives)) %>% 
+  # This gives a dataframe with "cell" "Releve_area" "n_total" "n_nonnatives" "n_only_natives" "cell_type"; 7,762 rows 
+  # Select cells that contain both 'nonnatives' and 'only native' plots, and at least 5 of each type
+  filter(cell_type != "non-natives") %>% 
+  filter(cell_type != "only natives") %>% 
+  filter(cell_type != "invasives") %>%
+  filter(n_invasives >= 3) %>% 
+  filter(n_non_natives >= 3)
+nrow(splotdt_glonaf_griis_13_comparablecells_c) # 26 cells
+
+# Master C dataset containing all plots IDs to be analysed
+splotdt_glonaf_griis_13_comparable_plots_c <- splotdt_glonaf_griis_13_comparablecells_c %>% 
+  left_join(splotdt_glonaf_griis_13_reduced1) %>% 
+  filter(plot_status != "only natives") %>% 
+  select(cell,PlotObservationID,plot_status,Releve_area, n_total,n_non_natives,n_only_natives, n_invasives)
+
+
+# Tests - Minimum plot per cell exploration  ---- 
+# The following codee tested the number of cells and plots included in analysis with 5 plots of each type per cell. 
+
+# AA/ Non-natives vs. natives: 5 of each
+splotdt_glonaf_griis_13_comparablecells_aa <- left_join(splotdt_glonaf_griis_13_reduced1,
+                                                       left_join(
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of plots per cell (i.e. how many times does one cell come up in the dataframe)
+                                                           ungroup() %>% 
+                                                           count(cell),
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of nonnatives/non nonnatives plots within each cell
+                                                           ungroup() %>% 
+                                                           group_by(cell) %>% 
+                                                           count(nplots=plot_status) %>% 
+                                                           spread(key=nplots,value=n) 
+                                                       )
+) %>% 
+  group_by(cell) %>% 
+  select(-PlotObservationID) %>% 
+  distinct() %>% 
+  mutate(cell_type=paste(plot_status,collapse=" ")) %>% 
+  select(-plot_status) %>%  
+  distinct() %>% 
+  rename(n_total=n, n_non_natives=`non-natives`, n_only_natives=`only natives`, n_invasives=invasives) %>%  
+  mutate(n_non_natives = ifelse(is.na(n_non_natives), 0, n_non_natives)) %>% # replace NAs in n_non_natives by 0 
+  mutate(n_invasives = ifelse(is.na(n_invasives), 0, n_invasives)) %>% 
+  # This gives a dataframe with "cell" "Releve_area" "n_total" "n_nonnatives" "n_only_natives" "cell_type"; 7,762 rows 
+  # Select cells that contain both 'nonnatives' and 'only native' plots, and at least 5 of each type
+  filter(cell_type != "non-natives") %>% 
+  filter(cell_type != "only natives") %>% 
+  filter(cell_type != "invasives") %>%
+  filter(n_non_natives >= 5) %>% 
+  filter(n_only_natives >= 5)
+nrow(splotdt_glonaf_griis_13_comparablecells_aa) # 47 cells 
+
+# Master AA dataset containing all plots IDs to be analysed
+splotdt_glonaf_griis_13_comparable_plots_aa <- splotdt_glonaf_griis_13_comparablecells_aa %>% 
+  left_join(splotdt_glonaf_griis_13_reduced1) %>% 
+  filter(plot_status != "invasives") %>% 
+  select(cell,PlotObservationID,plot_status,Releve_area, n_total,n_non_natives,n_only_natives, n_invasives)
+
+
+# BB/ Invasives vs. natives: 5 of each
+splotdt_glonaf_griis_13_comparablecells_bb <- left_join(splotdt_glonaf_griis_13_reduced1,
+                                                       left_join(
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of plots per cell (i.e. how many times does one cell come up in the dataframe)
+                                                           ungroup() %>% 
+                                                           count(cell),
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of nonnatives/non nonnatives plots within each cell
+                                                           ungroup() %>% 
+                                                           group_by(cell) %>% 
+                                                           count(nplots=plot_status) %>% 
+                                                           spread(key=nplots,value=n) 
+                                                       )
+) %>% 
+  group_by(cell) %>% 
+  select(-PlotObservationID) %>% 
+  distinct() %>% 
+  mutate(cell_type=paste(plot_status,collapse=" ")) %>% 
+  select(-plot_status) %>%  
+  distinct() %>% 
+  rename(n_total=n, n_non_natives=`non-natives`, n_only_natives=`only natives`, n_invasives=invasives) %>%  
+  mutate(n_non_natives = ifelse(is.na(n_non_natives), 0, n_non_natives)) %>% # replace NAs in n_non_natives by 0 
+  mutate(n_invasives = ifelse(is.na(n_invasives), 0, n_invasives)) %>% 
+  # This gives a dataframe with "cell" "Releve_area" "n_total" "n_nonnatives" "n_only_natives" "cell_type"; 7,762 rows 
+  # Select cells that contain both 'nonnatives' and 'only native' plots, and at least 5 of each type
+  filter(cell_type != "non-natives") %>% 
+  filter(cell_type != "only natives") %>% 
+  filter(cell_type != "invasives") %>%
+  filter(n_invasives >= 5) %>% 
+  filter(n_only_natives >= 5)
+nrow(splotdt_glonaf_griis_13_comparablecells_bb) # 14 cells 
+
+# Master BB dataset containing all plots IDs to be analysed
+splotdt_glonaf_griis_13_comparable_plots_bb <- splotdt_glonaf_griis_13_comparablecells_bb %>% 
+  left_join(splotdt_glonaf_griis_13_reduced1) %>% 
+  filter(plot_status != "non-natives") %>% 
+  select(cell,PlotObservationID,plot_status,Releve_area, n_total,n_non_natives,n_only_natives, n_invasives)
+
+
+# CC/ Invasives vs. non-natives: 5 each
+splotdt_glonaf_griis_13_comparablecells_cc <- left_join(splotdt_glonaf_griis_13_reduced1,
+                                                       left_join(
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of plots per cell (i.e. how many times does one cell come up in the dataframe)
+                                                           ungroup() %>% 
+                                                           count(cell),
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of nonnatives/non nonnatives plots within each cell
+                                                           ungroup() %>% 
+                                                           group_by(cell) %>% 
+                                                           count(nplots=plot_status) %>% 
+                                                           spread(key=nplots,value=n) 
+                                                       )
+) %>% 
+  group_by(cell) %>% 
+  select(-PlotObservationID) %>% 
+  distinct() %>% 
+  mutate(cell_type=paste(plot_status,collapse=" ")) %>% 
+  select(-plot_status) %>%  
+  distinct() %>% 
+  rename(n_total=n, n_non_natives=`non-natives`, n_only_natives=`only natives`, n_invasives=invasives) %>%  
+  mutate(n_non_natives = ifelse(is.na(n_non_natives), 0, n_non_natives)) %>% # replace NAs in n_non_natives by 0 
+  mutate(n_invasives = ifelse(is.na(n_invasives), 0, n_invasives)) %>% 
+  # This gives a dataframe with "cell" "Releve_area" "n_total" "n_nonnatives" "n_only_natives" "cell_type"; 7,762 rows 
+  # Select cells that contain both 'nonnatives' and 'only native' plots, and at least 5 of each type
+  filter(cell_type != "non-natives") %>% 
+  filter(cell_type != "only natives") %>% 
+  filter(cell_type != "invasives") %>%
+  filter(n_invasives >= 5) %>% 
+  filter(n_non_natives >= 5)
+nrow(splotdt_glonaf_griis_13_comparablecells_cc) # 5 cells
+
+# Master CC dataset containing all plots IDs to be analysed
+splotdt_glonaf_griis_13_comparable_plots_cc <- splotdt_glonaf_griis_13_comparablecells_cc %>% 
+  left_join(splotdt_glonaf_griis_13_reduced1) %>% 
+  filter(plot_status != "only natives") %>% 
+  select(cell,PlotObservationID,plot_status,Releve_area, n_total,n_non_natives,n_only_natives, n_invasives)
+
+# CCC/ Invasives vs. non-natives: 4 plots of each type per cell
+splotdt_glonaf_griis_13_comparablecells_ccc <- left_join(splotdt_glonaf_griis_13_reduced1,
+                                                       left_join(
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of plots per cell (i.e. how many times does one cell come up in the dataframe)
+                                                           ungroup() %>% 
+                                                           count(cell),
+                                                         splotdt_glonaf_griis_13_reduced1 %>% #count number of nonnatives/non nonnatives plots within each cell
+                                                           ungroup() %>% 
+                                                           group_by(cell) %>% 
+                                                           count(nplots=plot_status) %>% 
+                                                           spread(key=nplots,value=n) 
+                                                       )
+) %>% 
+  group_by(cell) %>% 
+  select(-PlotObservationID) %>% 
+  distinct() %>% 
+  mutate(cell_type=paste(plot_status,collapse=" ")) %>% 
+  select(-plot_status) %>%  
+  distinct() %>% 
+  rename(n_total=n, n_non_natives=`non-natives`, n_only_natives=`only natives`, n_invasives=invasives) %>%  
+  mutate(n_non_natives = ifelse(is.na(n_non_natives), 0, n_non_natives)) %>% # replace NAs in n_non_natives by 0 
+  mutate(n_invasives = ifelse(is.na(n_invasives), 0, n_invasives)) %>% 
+  # This gives a dataframe with "cell" "Releve_area" "n_total" "n_nonnatives" "n_only_natives" "cell_type"; 7,762 rows 
+  # Select cells that contain both 'nonnatives' and 'only native' plots, and at least 5 of each type
+  filter(cell_type != "non-natives") %>% 
+  filter(cell_type != "only natives") %>% 
+  filter(cell_type != "invasives") %>%
+  filter(n_invasives >= 4) %>% 
+  filter(n_non_natives >= 4)
+nrow(splotdt_glonaf_griis_13_comparablecells_ccc) # 8 cells
+
+# Master CCC dataset containing all plots IDs to be analysed
+splotdt_glonaf_griis_13_comparable_plots_ccc <- splotdt_glonaf_griis_13_comparablecells_ccc %>% 
+  left_join(splotdt_glonaf_griis_13_reduced1) %>% 
+  filter(plot_status != "only natives") %>% 
+  select(cell,PlotObservationID,plot_status,Releve_area, n_total,n_non_natives,n_only_natives, n_invasives)
+head(splotdt_glonaf_griis_13_comparable_plots_ccc)
+
+
+# Export master dataframes ----
+write.csv(splotdt_glonaf_griis_13_comparable_plots_a,
+          "rdata/splotdt_glonaf_griis_master1_a.csv",row.names=FALSE)
+write.csv(splotdt_glonaf_griis_13_comparable_plots_aa,
+          "rdata/splotdt_glonaf_griis_master1_aa.csv",row.names=FALSE)
+
+write.csv(splotdt_glonaf_griis_13_comparable_plots_b,
+          "rdata/splotdt_glonaf_griis_master1_b.csv",row.names=FALSE)
+write.csv(splotdt_glonaf_griis_13_comparable_plots_bb,
+          "rdata/splotdt_glonaf_griis_master1_bb.csv",row.names=FALSE)
+
+write.csv(splotdt_glonaf_griis_13_comparable_plots_c,
+          "rdata/splotdt_glonaf_griis_master1_c.csv",row.names=FALSE)
+write.csv(splotdt_glonaf_griis_13_comparable_plots_cc,
+          "rdata/splotdt_glonaf_griis_master1_cc.csv",row.names=FALSE)
+write.csv(splotdt_glonaf_griis_13_comparable_plots_ccc,
+          "rdata/splotdt_glonaf_griis_master1_ccc.csv",row.names=FALSE)

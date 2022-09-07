@@ -1,0 +1,171 @@
+# This script adds the GRIIS dataset to  GloNAF and sPlot 
+
+# Unzip GRIIS files ----
+griis_folder <- "rdata/griis_3" # create folder to put the griis files in 
+
+for(file in list.files(path="rdata/griis_3", pattern= ".zip", all.files=FALSE, full.names=TRUE)) {
+  file_name <- gsub(".zip", "", basename(file))
+  file_path <- file.path(griis_folder,file_name)
+  dir.create(file_path)
+  unzip(file, files = NULL, list = FALSE, overwrite = TRUE,
+        junkpaths = FALSE, exdir = file_path, unzip = "internal",
+        setTimes = FALSE) 
+}
+
+#  Bring GRIIS files together to create one GRIIS dataframe ----
+first = TRUE
+for(file in list.files(path = griis_folder, pattern = "distribution.txt", all.files = FALSE, full.names = TRUE, recursive = TRUE)) {
+  if (first) { 
+    griis_distribution = read.table(file, sep="\t", header = TRUE) %>% 
+      select(id, countryCode) %>% 
+      mutate(across(everything(), as.character))
+    first = FALSE
+  } else { 
+    temp = read.table(file, sep="\t", header = TRUE) %>% 
+      select(id, countryCode) %>%  
+      mutate(across(everything(), as.character))
+    griis_distribution = union(griis_distribution, temp)
+  }
+}
+
+first = TRUE
+for(file in list.files(path = griis_folder, pattern = "speciesprofile.txt", all.files = FALSE, full.names = TRUE, recursive = TRUE)) {
+  if (first) { 
+    griis_species_status = read.table(file, sep="\t", header = TRUE) %>% 
+      select(id, isInvasive) %>% 
+      mutate(across(everything(), as.character))
+    first = FALSE
+  } else { 
+    temp = read.table(file, sep="\t", header = TRUE) %>% 
+      select(id, isInvasive) %>%  
+      mutate(across(everything(), as.character))
+    griis_species_status = union(griis_species_status, temp)
+  }
+}
+
+first = TRUE
+for(file in list.files(path = griis_folder, pattern = "taxon.txt", all.files = FALSE, full.names = TRUE, recursive = TRUE)) {
+  if (first) { 
+    griis_species = read_tsv(file) %>% 
+      select(id, scientificName) %>% 
+      mutate(across(everything(), as.character))
+    first = FALSE
+  } else { 
+    temp = read.table(file, sep="\t", header = TRUE) %>% 
+      select(id, scientificName) %>%  
+      mutate(across(everything(), as.character))
+    griis_species = union(griis_species, temp)
+  }
+}
+
+# Some griis datasets had to be added as they were not on the GRIIS website but only on GBIF
+
+griis_data_added <- griis_distribution %>% 
+  left_join(griis_species_status) %>% 
+  left_join(griis_species) %>% 
+  select(scientificName, isInvasive, countryCode)
+head(griis_data_added)  
+  
+# Country code needs to be trasnformed from 2-letter ISO code to 3-letter ISO code
+country_code_transformation <- read_csv("rdata/country_code_transformation.csv")
+
+griis_data_invasives <- griis_data %>% 
+  union(griis_data_added) %>% 
+  mutate(country_code = substr(countryCode, start = 1, stop = 2)) %>% 
+  select(-countryCode) %>% 
+  # change country code from 2-letter ISO code to 3-letter ISO code
+  left_join(country_code_transformation %>% 
+              select(alpha_2_code, alpha_3_code), 
+            by = c("country_code" = "alpha_2_code")) %>% 
+  select(-country_code) %>% 
+  rename(country_code = alpha_3_code, species_griis = scientificName) %>% 
+  # Clean the species names by only keeping the two first words of the species column 
+  mutate(species_griis_split = str_split_fixed(species_griis, ' ', 4)) %>%  # split the species column in 4 columns
+  mutate(species_griis_reduced = paste(species_griis_split[,1], species_griis_split[,2])) %>%  # combine the two first columns together
+  distinct() %>% 
+  select(-species_griis_split, -species_griis) %>% 
+  rename(species_griis = species_griis_reduced) %>% 
+  distinct() %>%
+  # state species status as "invasive" or "non_invasive"
+  mutate(isInvasive = ifelse(isInvasive == "Invasive", "invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "Yes", "invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "yes", "invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "TRUE", "invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "YES", "invasive", isInvasive)) %>% 
+  filter(isInvasive == "invasive")
+head(griis_data_invasives)
+nrow(griis_data_invasives) #14,618
+
+# Join GRIIS to splotdt_glonaf ----
+splotdt_glonaf <- read_csv("rdata/splotdt_glonaf.csv")
+glonaf_regions <- read_csv("rdata/GLONAF/Region_GloNAF_vanKleunenetal2018Ecology.csv")
+head(splotdt_glonaf)
+
+splotdt_glonaf_griis <- splotdt_glonaf %>% 
+  left_join(glonaf_regions %>% 
+              select(OBJIDsic, code) %>% 
+              mutate(country_code = substr(code, start = 1, stop = 3)) %>%
+              distinct()) %>% 
+  left_join(griis_data_invasives, 
+            by = c("country_code", "Species" = "species_griis")) %>% 
+  distinct() %>% 
+  replace_na(list(isInvasive = "non_invasive")) %>% 
+  mutate(status = ifelse(isInvasive == "invasive", "invasive", status)) %>% 
+  select(-isInvasive) %>% 
+  rename(species_status = status) 
+head(splotdt_glonaf_griis)
+unique(splotdt_glonaf_griis$status)
+
+# Export dataset ---- 
+write.csv(splotdt_glonaf_griis, "rdata/splotdt_glonaf_griis.csv", row.names=FALSE)
+
+
+# Country check ----
+# Some griis datasets had to be added as they were not on the GRIIS website but only on GBIF.
+# The following code was used to check what countries are missing from GRIIS 
+griis_data_1_countries <- griis_data %>% 
+  mutate(country_code = substr(countryCode, start = 1, stop = 2)) %>% 
+  select(-countryCode) %>% 
+  left_join(country_code_transformation %>% 
+              select(alpha_2_code, alpha_3_code), 
+            by = c("country_code" = "alpha_2_code")) %>% 
+  select(-country_code) %>% 
+  rename(country_code = alpha_3_code, species_griis = scientificName) %>% 
+  mutate(species_griis_split = str_split_fixed(species_griis, ' ', 4)) %>%  # split the species column in 4 columns
+  # combine the two first columns together 
+  mutate(species_griis_reduced = paste(species_griis_split[,1], species_griis_split[,2])) %>% 
+  distinct() %>% 
+  # combine the three first columns together
+  select(-species_griis_split, -species_griis) %>% 
+  rename(species_griis = species_griis_reduced) %>% 
+  distinct() %>%
+  mutate(isInvasive = ifelse(isInvasive == "Invasive", "invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "Yes", "invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "yes", "invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "TRUE", "invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "YES", "invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "Null", "non_invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "NA", "non_invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "Invasive?", "non_invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "FALSE", "non_invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "Invasive in the north of the island (122).", "non_invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(isInvasive == "Not specified", "non_invasive", isInvasive)) %>% 
+  mutate(isInvasive = ifelse(is.na(isInvasive), "non_invasive", isInvasive)) %>% 
+  select(isInvasive, country_code) %>% 
+  distinct()
+griis_data_1_countries_list <- unique(griis_data_1_countries$country_code)
+
+splotdt_glonaf_countries <- splotdt_glonaf %>% 
+  select(PlotObservationID, OBJIDsic) %>% 
+  left_join(glonaf_regions %>% 
+              select(OBJIDsic, code) %>% 
+              mutate(country_code = substr(code, start = 1, stop = 3)) %>%
+              select(-code) %>% 
+              distinct()) %>% 
+  distinct()
+splotdt_glonaf_countries_list <- unique(splotdt_glonaf_countries$country_code)
+
+# Print the difference between the two datasets, i.e. print missing countries
+print(setdiff(splotdt_glonaf_countries_list, griis_data_1_countries_list))
+
+

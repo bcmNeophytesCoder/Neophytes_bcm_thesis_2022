@@ -1,0 +1,338 @@
+# This script sets up the models used in the analysis and explores assumptions 
+
+load("rdata/SPLOT/sPlotOpen (2).RData")
+
+# A/  ----
+master3_a <- read.csv("rdata/splotdt_glonaf_griis_master3_a.csv")
+head(master3_a)
+
+# Model species richness ---- 
+
+model_a_SR<- glmer(species_richness ~ plot_status + (1 | cell), data=master3_a,family=poisson()) #use generalised mixed linear modelling, with Poisson
+summary(model_a_SR)
+model_a_SR_natives<- glmer(species_richness_natives ~ plot_status + (1 | cell) + (1 | biome), data=master3_a,family=poisson()) #use generalised mixed linear modelling, with Poisson
+summary(model_a_SR_natives)
+
+# Model evenness ----
+
+# Shannon
+model_a_shannon_di <- lmer(shannon_di ~ plot_status + (1|cell) + (1 | biome), data = master3_a)
+summary(model_a_shannon_di)
+ranova(model_a_shannon_di)
+# check normal distribution 
+lm_model_a_shannon_di <- lm(shannon_di ~ plot_status + (1|cell), data = master3_a)
+summary(lm_model_a_shannon_di)
+ols_plot_resid_qq(lm_model_a_shannon_di)
+ols_plot_resid_hist(lm_model_a_shannon_di)
+ks.test(master3_a$shannon_di, "pnorm") # not normal 
+ks.test(resid(model_a_shannon_di), "pnorm") # not normal
+qqPlot(resid(model_a_shannon_di))  
+hist(resid(model_a_shannon_di)) 
+
+# Shannon natives 
+model_a_shannon_di_native <- lmer(shannon_di_natives ~ plot_status + (1|cell) + (1 | biome), data = master3_a)
+summary(model_a_shannon_di_native)
+# normality checks: 
+lm_model_a_shannon_di_native <- lm(shannon_di_natives ~ plot_status + (1|cell), data = master3_a)
+ols_plot_resid_qq(lm_model_a_shannon_di_native) # looks relatively normal enough
+ols_plot_resid_hist(lme_model_a_shannon_di_native) # looks relatively normal enough
+ks.test(master3_a$shannon_di_natives, "pnorm") # Not normal (p-value < 2.2e-16)
+ks.test(resid(model_a_shannon_di_native), "pnorm") # Not normal (p-value < 2.2e-16)
+qqPlot(resid(model_a_shannon_di_native)) 
+hist(resid(model_a_shannon_di_native))
+
+# Simpson
+model_a_simpson_di <- lmer(simpson_di ~ plot_status + (1|cell) + (1 | biome), data = master3_a)
+summary(model_a_simpson_di)
+# normality checks: 
+lm_model_a_simpson_di <- lm(shannon_di ~ plot_status + (1|cell), data = master3_a)
+summary(lm_model_a_simpson_di)
+ols_plot_resid_qq(lm_model_a_simpson_di) # looks relatively normal enough
+ols_plot_resid_hist(lm_model_a_simpson_di) # looks relatively normal enough
+ks.test(master3_a$simpson_di, "pnorm") # not normal (p-value < 2.2e-16)
+ks.test(resid(model_a_simpson_di), "pnorm") # not normal (p-value < 2.2e-16)
+qqPlot(resid(model_a_simpson_di))
+hist(resid(model_a_simpson_di))
+
+# Simpson natives 
+model_a_simpson_di_native <- lmer(simpson_di_natives ~ plot_status + (1|cell) + (1 | biome), data = master3_a)
+summary(model_a_simpson_di_native)
+# normality checks: 
+lm_model_a_simpson_di_native <- lm(shannon_di ~ plot_status + (1|cell), data = master3_a)
+ols_plot_resid_qq(lm_model_a_simpson_di_native) # looks relatively normal enough 
+ols_plot_resid_hist(lm_model_a_simpson_di_native) # looks relatively normal enough
+ks.test(master3_a$simpson_di_natives, "pnorm") # not normal (p-value < 2.2e-16)
+ks.test(resid(lm_model_a_simpson_di_native), "pnorm") # not normal (p-value < 2.2e-16)
+qqPlot(resid(model_a_simpson_di_native)) 
+hist(resid(model_a_simpson_di_native)) 
+
+# Model biomes ----
+
+# Biomes SR ----
+
+model_a_biomes_SR<- glmer(species_richness ~ plot_status * biome + (1 | cell), data=master3_a,family=poisson()) #use generalised mixed linear modelling, with Poisson
+summary(model_a_biomes_SR)
+model_a_biomes_SR_natives<- glmer(species_richness_natives ~ plot_status * biome + (1 | cell), data=master3_a,family=poisson()) #use generalised mixed linear modelling, with Poisson
+summary(model_a_biomes_SR_natives)
+
+
+# Biomes eveneess ----
+
+# Shannon
+model_a_biomes_shannon_di <- lmer(shannon_di ~ plot_status * biome + (1|cell), data = master3_a)
+summary(model_a_biomes_shannon_di)
+
+# Shannon natives 
+model_a_biomes_shannon_di_native <- lmer(shannon_di_natives ~ plot_status * biome + (1|cell), data = master3_a)
+summary(model_a_biomes_shannon_di_native)
+
+# Simpson
+model_a_biome_simpson_di <- lmer(simpson_di ~ plot_status * biome + (1|cell), data = master3_a)
+summary(model_a_biome_simpson_di)
+
+# Simpson natives 
+model_a_biome_simpson_di_native <- lmer(simpson_di_natives ~ plot_status * biome + (1|cell), data = master3_a)
+summary(model_a_biome_simpson_di_native)
+
+
+
+
+# B/ ----
+master3_b <- read.csv("rdata/splotdt_glonaf_griis_master3_b.csv")
+head(master3_b)
+
+# Model species richness ---- 
+
+model_b_species_richness<- glmer(species_richness ~ plot_status + (1 | cell), data=master3_b, family = poisson()) #use generalised mixed linear modelling, with Poisson
+summary(model_b_species_richness)
+model_b_SR_natives<- glmer(species_richness_natives ~ plot_status + (1 | cell), data=master3_b,family=poisson()) #use generalised mixed linear modelling, with Poisson
+summary(model_b_SR_natives)
+
+# Model evenness ----
+master3_b_evenness <- read.csv("rdata/splotdt_glonaf_griis_master3_b_evenness.csv")
+head(master3_b_evenness)
+master3_b_evenness_native <- read.csv("rdata/splotdt_glonaf_griis_master3_b_evenness_natives.csv")
+head(master3_b_evenness_native)
+
+
+# Shannon
+model_b_shannon_di <- lmer(shannon_di ~ plot_status + (1|cell) + (1 | biome), data = master3_b_evenness)
+summary(model_b_shannon_di)
+ranova(model_b_shannon_di)
+# check normal distribution 
+lm_model_b_shannon_di <- lm(shannon_di ~ plot_status + (1|cell), data = master3_b_evenness)
+summary(lm_model_b_shannon_di)
+ols_plot_resid_qq(lm_model_b_shannon_di)
+ols_plot_resid_hist(lm_model_b_shannon_di)
+ks.test(master3_b$shannon_di, "pnorm") 
+ks.test(resid(model_b_shannon_di), "pnorm") # not normalp
+qqPlot(resid(model_b_shannon_di)) # Looks relatively close to normal 
+hist(resid(model_b_shannon_di)) # Looks relatively close to normal 
+
+# Shannon natives 
+model_b_shannon_di_native <- lmer(shannon_di_natives ~ plot_status + (1|cell) + (1 | biome), data = master3_b_evenness_native)
+summary(model_b_shannon_di_native)
+# normality checks: 
+lm_model_b_shannon_di_native <- lm(shannon_di_natives ~ plot_status + (1|cell), data = master3_b_evenness_native)
+ols_plot_resid_qq(lm_model_b_shannon_di_native) 
+ols_plot_resid_hist(lme_model_b_shannon_di_native) 
+ks.test(master3_b_evenness_native$shannon_di_natives, "pnorm") # not normal
+ks.test(resid(model_b_shannon_di_native), "pnorm") # Not normal (p-value < 2.2e-16)
+qqPlot(resid(model_b_shannon_di_native))  # Looks relatively close to normal 
+hist(resid(model_b_shannon_di_native))  # Looks relatively close to normal 
+
+# Simpson
+model_b_simpson_di <- lmer(simpson_di ~ plot_status + (1|cell) + (1 | biome), data = master3_b_evenness)
+summary(model_b_simpson_di)
+# normality checks: 
+lm_model_b_simpson_di <- lm(shannon_di ~ plot_status + (1|cell), data = master3_b_evenness)
+summary(lm_model_b_simpson_di)
+ols_plot_resid_qq(lm_model_b_simpson_di) # looks relatively normal enough
+ols_plot_resid_hist(lm_model_b_simpson_di) # looks relatively normal enough
+ks.test(master3_b_evenness$simpson_di, "pnorm") # not normal (p-value < 2.2e-16)
+ks.test(resid(model_b_simpson_di), "pnorm") # not normal (p-value < 2.2e-16)
+qqPlot(resid(model_b_simpson_di))  
+hist(resid(model_b_simpson_di)) # Looks relatively close to normal 
+
+# Simpson natives 
+model_b_simpson_di_native <- lmer(simpson_di_natives ~ plot_status + (1|cell) + (1 | biome), data = master3_b_evenness_native)
+summary(model_b_simpson_di_native)
+# normality checks: 
+lm_model_b_simpson_di_native <- lm(shannon_di ~ plot_status + (1|cell), data = master3_b_evenness_native)
+ols_plot_resid_qq(lm_model_b_simpson_di_native) # looks relatively normal enough 
+ols_plot_resid_hist(lm_model_b_simpson_di_native) # looks relatively normal enough
+ks.test(master3_b_evenness_native$simpson_di_natives, "pnorm") # not normal (p-value < 2.2e-16)
+ks.test(resid(lm_model_b_simpson_di_native), "pnorm") # not normal (p-value < 2.2e-16)
+qqPlot(resid(model_b_simpson_di_native)) 
+hist(resid(model_b_simpson_di_native))
+
+
+# Model biomes ----
+
+# Biomes SR ----
+
+model_b_biomes_SR<- glmer(species_richness ~ plot_status * biome + (1 | cell), data=master3_b,family=poisson()) #use generalised mixed linear modelling, with Poisson
+summary(model_b_biomes_SR)
+model_b_biomes_SR_natives<- glmer(species_richness_natives ~ plot_status * biome + (1 | cell), data=master3_b,family=poisson()) #use generalised mixed linear modelling, with Poisson
+summary(model_b_biomes_SR_natives)
+
+
+# Biomes eveneess ----
+
+# Shannon
+model_b_biomes_shannon_di <- lmer(shannon_di ~ plot_status * biome + (1|cell), data = master3_b_evenness)
+summary(model_b_biomes_shannon_di)
+
+# Shannon natives 
+model_b_biomes_shannon_di_native <- lmer(shannon_di_natives ~ plot_status * biome + (1|cell), data = master3_b_evenness_native)
+summary(model_b_biomes_shannon_di_native)
+
+# Simpson
+model_b_biome_simpson_di <- lmer(simpson_di ~ plot_status * biome + (1|cell), data = master3_b_evenness)
+summary(model_b_biome_simpson_di)
+
+# Simpson natives 
+model_b_biome_simpson_di_native <- lmer(simpson_di_natives ~ plot_status * biome + (1|cell), data = master3_b_evenness_native)
+summary(model_b_biome_simpson_di_native)
+
+
+
+# C/ ----
+master3_c <- read.csv("rdata/splotdt_glonaf_griis_master3_c.csv")
+head(master3_c)
+
+# Model species richness ---- 
+
+model_c_species_richness<- glmer(species_richness ~ plot_status + (1 | cell), data = master3_c, family = poisson()) #use generalised mixed linear modelling, with Poisson
+summary(model_c_species_richness)
+model_c_SR_natives<- glmer(species_richness_natives ~ plot_status + (1 | cell), data = master3_c, family = poisson()) #use generalised mixed linear modelling, with Poisson
+summary(model_c_SR_natives)
+
+# Model evenness ----
+
+# Shannon
+model_c_shannon_di <- lmer(shannon_di ~ plot_status + (1|cell) + (1 | biome), data = master3_c)
+summary(model_c_shannon_di)
+ranova(model_c_shannon_di)
+# check normal distribution
+lm_model_c_shannon_di <- lm(shannon_di ~ plot_status + (1|cell), data = master3_c)
+summary(lm_model_c_shannon_di)
+ols_plot_resid_qq(lm_model_c_shannon_di)
+ols_plot_resid_hist(lm_model_c_shannon_di)
+ks.test(master3_c$shannon_di, "pnorm") # not normal, warning message comes up
+ks.test(resid(model_c_shannon_di), "pnorm") # not normal, warning message comes up
+qqPlot(resid(model_c_shannon_di)) # Looks fairly normal 
+hist(resid(model_c_shannon_di)) # Looks fairly normal 
+
+# Shannon natives 
+model_c_shannon_di_native <- lmer(shannon_di_natives ~ plot_status + (1|cell) + (1 | biome), data = master3_c)
+summary(model_c_shannon_di_native)
+# normality checks: 
+lm_model_c_shannon_di_native <- lm(shannon_di_natives ~ plot_status + (1|cell), data = master3_c)
+ols_plot_resid_qq(lm_model_c_shannon_di_native) # looks relatively normal enough
+ols_plot_resid_hist(lme_model_c_shannon_di_native) # looks relatively normal enough
+ks.test(master3_c$shannon_di_natives, "pnorm") # Not normal (p-value < 2.2e-16)
+ks.test(resid(model_c_shannon_di_native), "pnorm") # Not normal (p-value < 2.2e-16)
+qqPlot(resid(model_c_shannon_di_native)) # Looks fairly normal 
+hist(resid(model_c_shannon_di_native)) # Looks fairly normal 
+
+# Simpson
+model_c_simpson_di <- lmer(simpson_di ~ plot_status + (1|cell) + (1 | biome), data = master3_c)
+summary(model_c_simpson_di)
+# normality checks: 
+lm_model_c_simpson_di <- lm(shannon_di ~ plot_status + (1|cell), data = master3_c)
+summary(lm_model_c_simpson_di)
+ols_plot_resid_qq(lm_model_c_simpson_di) # looks relatively normal enough
+ols_plot_resid_hist(lm_model_c_simpson_di) # looks relatively normal enough
+ks.test(master3_c$simpson_di, "pnorm") # not normal (p-value < 2.2e-16)
+ks.test(resid(model_c_simpson_di), "pnorm") # not normal (p-value < 2.2e-16)
+qqPlot(resid(model_c_simpson_di)) 
+hist(resid(model_c_simpson_di)) 
+
+# Simpson natives 
+model_c_simpson_di_native <- lmer(simpson_di_natives ~ plot_status + (1|cell) + (1 | biome), data = master3_c)
+summary(model_c_simpson_di_native)
+# normality checks: 
+lm_model_c_simpson_di_native <- lm(shannon_di ~ plot_status + (1|cell), data = master3_c)
+ols_plot_resid_qq(lm_model_c_simpson_di_native) # looks relatively normal enough 
+ols_plot_resid_hist(lm_model_c_simpson_di_native) # looks relatively normal enough
+ks.test(master3_c$simpson_di_natives, "pnorm") # not normal (p-value < 2.2e-16)
+ks.test(resid(lm_model_c_simpson_di_native), "pnorm") # not normal (p-value < 2.2e-16)
+qqPlot(resid(model_c_simpson_di_native))
+hist(resid(model_c_simpson_di_native))
+
+
+# Model biomes ----
+
+# Biomes SR ----
+
+model_c_biomes_SR<- glmer(species_richness ~ plot_status * biome + (1 | cell), data = master3_c, family=poisson()) #use generalised mixed linear modelling, with Poisson
+summary(model_c_biomes_SR)
+model_c_biomes_SR_natives<- glmer(species_richness_natives ~ plot_status * biome + (1 | cell), data=master3_c,family=poisson()) #use generalised mixed linear modelling, with Poisson
+summary(model_c_biomes_SR_natives)
+
+# Biomes eveneess ----
+
+# Shannon
+model_c_biomes_shannon_di <- lmer(shannon_di ~ plot_status * biome + (1|cell), data = master3_c)
+summary(model_c_biomes_shannon_di)
+
+# Shannon natives 
+model_c_biomes_shannon_di_native <- lmer(shannon_di_natives ~ plot_status * biome + (1|cell), data = master3_c)
+summary(model_c_biomes_shannon_di_native)
+
+# Simpson
+model_c_biome_simpson_di <- lmer(simpson_di ~ plot_status * biome + (1|cell), data = master3_c)
+summary(model_c_biome_simpson_di)
+
+# Simpson natives 
+model_c_biome_simpson_di_native <- lmer(simpson_di_natives ~ plot_status * biome + (1|cell), data = master3_c)
+summary(model_c_biome_simpson_di_native)
+
+
+
+
+
+
+# Other exploration of normality and other models explored ---- 
+
+View(master3_a)
+master3_a$shannon_di_transformed <- log(master3_a$shannon_di) # transform data 
+master3_a_exploration_within_cells <- master3_a %>% 
+  filter(cell == 58312)
+
+# shannon div
+hist(master3_a_exploration_within_cells$shannon_di)
+qqPlot(master3_a_exploration_within_cells$shannon_di)
+shapiro.test(master3_a_exploration_within_cells$shannon_di) # IT IS NORMAL for cells 58312, 330907, 821876, 1660574, 1661301, 1664959, 1668605, 1675898, 1679532, 1679532, 1680266, 1697039
+# --> Not normally distributed for cells 1678083
+
+# looking at residuals within cells 
+model_shannon_di <- lm(shannon_di ~ plot_status + (1|cell), data=master3_a_exploration_within_cells)
+hist(resid(model_shannon_di))
+shapiro.test(resid(model_shannon_di))
+# --> residuals for cells 1678083 are normally distributed even if the variable itself is not normally distributed (see line 77)
+
+# simpson div 
+hist(master3_a_exploration_within_cells$simpson_di)
+qqPlot(master3_a_exploration_within_cells$simpson_di)
+shapiro.test(master3_a_exploration_within_cells$simpson_di) # normal in cell 
+# --> Not normal in cells 58312, 
+
+# looking at residuals within cells 
+model_simpson_di <- lm(simpson_di ~ plot_status + (1|cell), data=master3_a_exploration_within_cells)
+hist(resid(model_simpson_di))
+shapiro.test(resid(model_simpson_di))
+# --> residuals for cells       are normally distributed even if the variable itself is not normally distributed
+# --> residuals not normally distributed for cells 58312 
+
+
+# nlme model Shannon diversity
+
+model_shannon_div <- nlme(shannon_di ~ plot_status + (1 | cell), data=master3_a) #use non linear mixed model because not normally distributed
+model_shannon_div <- nlme(shannon_di ~ plot_status, 
+                          fixed = plot_status ~ 1,
+                          random = cell ~ 1, 
+                          data = master3_a)
+
+summary(model_shannon_div)

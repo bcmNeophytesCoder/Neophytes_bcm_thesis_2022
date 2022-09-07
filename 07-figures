@@ -1,0 +1,1037 @@
+# This script creates figures presented in the paper
+
+# Load data ----
+master3_a <- read.csv("rdata/splotdt_glonaf_griis_master3_a.csv")
+master3_b <- read.csv("rdata/splotdt_glonaf_griis_master3_b.csv")
+master3_b_evenness <- read.csv("rdata/splotdt_glonaf_griis_master3_b_evenness.csv")
+master3_b_evenness_native <- read.csv("rdata/splotdt_glonaf_griis_master3_b_evenness_natives.csv")
+
+# Sample sizes 
+biomes_a_sample_size <- read.csv("rdata/biomes_a_sample_size.csv")
+biomes_b_sample_size <- read.csv("rdata/biomes_b_sample_size.csv")
+biomes_b_evenness_sample_size <- read.csv("rdata/biomes_b_evenness_sample_size.csv")
+
+# Distribution data 
+master3a_distribution <- read.csv("rdata/splotdt_glonaf_griis_master3_a_distribution.csv")
+master3b_distribution <- read.csv("rdata/splotdt_glonaf_griis_master3_b_distribution.csv")
+master3b_distribution_evenness <- read.csv("rdata/splotdt_glonaf_griis_master3_b_evenness_distribution.csv")
+
+
+# Models ---- 
+
+# A
+
+model_a_SR<- glmer(species_richness ~ plot_status + (1 | cell), data=master3_a,family=poisson()) 
+
+model_a_shannon_di <- lmer(shannon_di ~ plot_status + (1|cell), data = master3_a)
+
+model_a_simpson_di <- lmer(simpson_di ~ plot_status + (1|cell), data = master3_a)
+
+model_a_biomes_SR<- glmer(species_richness ~ plot_status * biome + (1 | cell), data=master3_a,family=poisson()) 
+
+model_a_biomes_shannon_di <- lmer(shannon_di ~ plot_status * biome + (1|cell), data = master3_a)
+
+model_a_biomes_simpson_di <- lmer(simpson_di ~ plot_status * biome + (1|cell), data = master3_a)
+
+# B 
+
+model_b_SR<- glmer(species_richness ~ plot_status + (1 | cell), data=master3_b,family=poisson()) 
+
+model_b_shannon_di <- lmer(shannon_di ~ plot_status + (1|cell), data = master3_b_evenness)
+
+model_b_simpson_di <- lmer(simpson_di ~ plot_status + (1|cell), data = master3_b_evenness)
+
+model_b_biomes_SR<- glmer(species_richness ~ plot_status * biome + (1 | cell), data=master3_b,family=poisson()) 
+
+model_b_biomes_shannon_di <- lmer(shannon_di ~ plot_status * biome + (1|cell), data = master3_b_evenness)
+
+model_b_biomes_simpson_di <- lmer(simpson_di ~ plot_status * biome + (1|cell), data = master3_b_evenness)
+
+
+# Figures ---- 
+
+# Map ----
+world <- map_data("world") 
+world <- world %>% filter(region != "Antarctica")
+cc <- paletteer_d("ggsci::category10_d3") 
+map_a_b <- ggplot() + 
+  geom_map(data = world, map = world, aes(long, lat, map_id = region), color = "grey70", fill = "white") + 
+  geom_point(data = master3a_distribution, aes(Longitude, Latitude, color = biome), size = 5) + 
+  geom_point(data = master3b_distribution, aes(Longitude, Latitude, color = biome), size = 5, shape = 17) + 
+  labs(title = ~ atop(paste("Distribution of plots included in comparison analyses of areas containing non-invasive neophytes,"),
+                      paste("areas containing invasive neophytes, and areas only containing non-native species"))) +
+  theme_void() +
+  theme(legend.position = "bottom", 
+        text = element_text(size = 26),
+        plot.title = element_text(size = 28, vjust = 1.5, hjust = 0.3),
+        panel.border = element_rect(color = "grey40", fill = NA, size = 1),
+        plot.margin = unit(c(1,1,1,1), "cm")) + 
+  scale_color_manual(values=cc, na.value="grey70", name = "Biomes     ") +
+  guides(color = guide_legend(override.aes = list(size=5), nrow = 4, byrow = TRUE))
+
+ggsave("rdata/map_a_b.png", plot = map_a_b, bg = "white", width = 18, height = 11, units = "in")
+
+
+# A SR ----
+
+(emmeans(model_a_biomes_SR, ~ plot_status, type = "response"))
+
+model_a_SR_plot <- pairs(
+  emmeans(model_a_SR, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_a_biomes_SR_plot <- pairs(
+  emmeans(model_a_biomes_SR, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_a_sample_size) %>% 
+  filter(cells_in_biome >= 4) %>% 
+  left_join(biomes_b_sample_size, 
+            by = c("biome")) %>% 
+  rename ("cells_in_biome_a" = "cells_in_biome.x", "cells_in_biome_b" = "cells_in_biome.y") %>%
+  mutate(cells_in_biome_b = ifelse(cells_in_biome_b <= 4, "-", cells_in_biome_b))
+
+both_plots_a_SR <- model_a_SR_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_a_biomes_SR_plot) %>% 
+  replace_na(list(cells_in_biome_a = 82)) %>% 
+  replace_na(list(cells_in_biome_b = "40")) %>% 
+  mutate(biome = paste0(biome, " (", cells_in_biome_a, ", ", cells_in_biome_b, ") ")) 
+
+
+(plot_a_biomes_SR <- both_plots_a_SR %>% 
+    ggplot(aes(x = ratio, y = fct_rev(biome), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = asymp.LCL, xmax = asymp.UCL)) +
+    geom_vline(xintercept = 1, lty = 1) +
+    geom_hline(yintercept = 8.5, lty = 3, color = "black") +
+    labs(y = "", x = "Species richness ratio") +
+    scale_color_manual(values = c("#b33b00", rep("#0078b3",10))) + 
+    scale_x_continuous(breaks = seq(0.9,1.4,0.1), 
+                       limits = c(0.93, 1.46)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), 
+          text = element_text(size = 20, color = "black"), 
+          axis.text = element_text(size = 20, color = "black"),
+          axis.text.y = element_text(margin = margin(r = 10)),
+          legend.position = "none", 
+          plot.margin = unit(c(1,0.05,0.5,0.5), "cm"))
+)
+# A shannon ----
+
+means_a_shannon <-  emmeans(model_a_shannon_di, ~ plot_status, type = "response") %>% 
+  confint %>% 
+  data.frame() 
+
+model_a_shannon_plot <- pairs(
+  emmeans(model_a_shannon_di, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_a_biomes_shannon_plot <- pairs(
+  emmeans(model_a_biomes_shannon_di, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_a_sample_size) %>% 
+  filter(cells_in_biome >= 4) %>% 
+  left_join(biomes_b_evenness_sample_size, 
+            by = c("biome")) %>% 
+  rename ("cells_in_biome_a" = "cells_in_biome", "cells_in_biome_b" = "cells_in_b_evennessiome") %>%
+  mutate(cells_in_biome_b = ifelse(cells_in_biome_b <= 4, "-", cells_in_biome_b))
+
+both_plots_a_shannon <- model_a_shannon_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_a_biomes_shannon_plot) %>% 
+  replace_na(list(cells_in_biome_a = 82)) %>% 
+  replace_na(list(cells_in_biome_b = "37")) %>% 
+  mutate(biome = paste0(biome, " (", cells_in_biome_a, ", ", cells_in_biome_b, ") ")) 
+
+(plot_a_biomes_shannon_di <- both_plots_a_shannon %>% 
+    ggplot(aes(x = estimate, y = fct_rev(biome), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = lower.CL, xmax = upper.CL)) +
+    geom_vline(xintercept = 0, lty = 1) +
+    geom_hline(yintercept = 8.5, lty = 3, color = "black") +
+    labs(y = "", x = "Shannon index difference") +
+    scale_color_manual(values = c("#ff9933", rep("#9933ff",10))) + 
+    scale_x_continuous(breaks = seq(-0.2,0.8,0.2), 
+                       limits = c(-0.25, 0.85)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), 
+          text = element_text(size = 20, color = "black"), 
+          axis.text = element_text(size = 20, color = "black"),
+          axis.text.y = element_text(margin = margin(r = 10)),
+          legend.position = "none", 
+          plot.margin = unit(c(1,0.1,0.5,0.5), "cm"))
+)
+
+# A simpson ----
+
+means_a_simpson <-  emmeans(model_a_simpson_di, ~ plot_status, type = "response") %>% 
+  confint %>% 
+  data.frame() 
+
+model_a_simpson_plot <- pairs(
+  emmeans(model_a_simpson_di, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_a_biomes_simpson_plot <- pairs(
+  emmeans(model_a_biomes_simpson_di, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_a_sample_size) %>% 
+  filter(cells_in_biome >= 4) %>% 
+  left_join(biomes_b_evenness_sample_size, 
+            by = c("biome")) %>% 
+  rename ("cells_in_biome_a" = "cells_in_biome", "cells_in_biome_b" = "cells_in_b_evennessiome") %>%
+  mutate(cells_in_biome_b = ifelse(cells_in_biome_b <= 4, "-", cells_in_biome_b))
+
+both_plots_a_simpson <- model_a_simpson_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_a_biomes_simpson_plot) %>% 
+  replace_na(list(cells_in_biome_a = 82)) %>% 
+  replace_na(list(cells_in_biome_b = "37")) %>% 
+  mutate(biome = paste0(biome, " (", cells_in_biome_a, ", ", cells_in_biome_b, ") ")) 
+
+(plot_a_biomes_simpson_di <- both_plots_a_simpson %>% 
+    ggplot(aes(x = estimate, y = fct_rev(biome), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = lower.CL, xmax = upper.CL)) +
+    geom_vline(xintercept = 0, lty = 1) +
+    geom_hline(yintercept = 8.5, lty = 3, color = "black") +
+    labs(y = "", x = "Simpson index difference") +
+    scale_color_manual(values = c("#ff3399", rep("#00bcbc",10))) + 
+    scale_x_continuous(labels = number_format(accuracy = 0.01, decimal.mark = '.'), 
+                       breaks = seq(-0.05, 0.25, 0.05), 
+                       limits = c(-0.057, 0.25)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), 
+          text = element_text(size = 20, color = "black"), 
+          axis.text = element_text(size = 20, color = "black"),
+          axis.text.y = element_text(margin = margin(r = 10)),
+          legend.position = "none", 
+          plot.margin = unit(c(1,0.1,1,0.5), "cm"))
+)
+
+
+# B SR ----
+model_b_SR_plot <- pairs(
+  emmeans(model_b_SR, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+(means_SR_b <- emmeans(model_b_SR, ~ plot_status, type = "response"))
+
+model_b_biomes_SR_plot <- pairs(
+  emmeans(model_b_biomes_SR, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_b_sample_size) %>% 
+  filter(biome != "Subtropics with winter rain")
+
+both_plots_b_SR <- model_b_SR_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_b_biomes_SR_plot)
+
+
+(plot_b_biomes_SR <- both_plots_b_SR %>% 
+    ggplot(aes(x = ratio, y = fct_rev(fct_inorder(biome)), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = asymp.LCL, xmax = asymp.UCL)) +
+    geom_vline(xintercept = 1, lty = 1) +
+    geom_hline(yintercept = 8.5, lty = 3, color = "black") +
+    labs(y = "", x = "Species richness ratio") +
+    scale_color_manual(values = c("#b33b00", "white", "#0078b3", "white", "white", "#0078b3", "#0078b3", "white", "white", "white")) +
+    scale_x_continuous(breaks = seq(0.9,1.4,0.1), 
+                       limits = c(0.93, 1.46)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          axis.text.y = element_blank (),
+          text = element_text(size = 20, color = "black"), 
+          axis.text = element_text(size = 20, color = "black"),
+          legend.position = "none", 
+          plot.margin = unit(c(1,1,0.5,0.05), "cm"))
+)
+
+# B shannon ----
+
+means_b_shannon <-  emmeans(model_b_shannon_di, ~ plot_status, type = "response") %>% 
+  confint %>% 
+  data.frame() 
+
+model_b_shannon_plot <- pairs(
+  emmeans(model_b_shannon_di, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_b_biomes_shannon_plot <- pairs(
+  emmeans(model_b_biomes_shannon_di, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_b_sample_size) %>% 
+  filter(biome != "Subtropics with winter rain")
+
+both_plots_b_shannon <- model_b_shannon_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_b_biomes_shannon_plot)
+
+
+(plot_b_biomes_shannon_di <- both_plots_b_shannon %>% 
+    ggplot(aes(x = estimate, y = fct_rev(fct_inorder(biome)), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = lower.CL, xmax = upper.CL)) +
+    geom_vline(xintercept = 0, lty = 1) +
+    geom_hline(yintercept = 8.5, lty = 3, color = "black") +
+    labs(y = "", x = "Shannon index difference") +
+    scale_color_manual(values = c("#ff9933", "white", "#9933ff", "white", "white", "#9933ff", "#9933ff", "white", "white", "white")) +
+    scale_x_continuous(breaks = seq(-0.20,0.8,0.2), 
+                       limits = c(-0.25, 0.85)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          axis.text.y = element_blank (),
+          text = element_text(size = 20, color = "black"), 
+          axis.text = element_text(size = 20, color = "black"),
+          legend.position = "none", 
+          plot.margin = unit(c(1,1,0.5,0.1), "cm"))
+)
+
+
+# B simpson ----
+
+means_b_simpson <-  emmeans(model_b_simpson_di, ~ plot_status, type = "response") %>% 
+  confint %>% 
+  data.frame() 
+
+
+model_b_simpson_plot <- pairs(
+  emmeans(model_b_simpson_di, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_b_biomes_simpson_plot <- pairs(
+  emmeans(model_b_biomes_simpson_di, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_b_sample_size) %>% 
+  filter(biome != "Subtropics with winter rain")
+
+both_plots_b_simpson <- model_b_simpson_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_b_biomes_simpson_plot)
+
+(plot_b_biomes_simpson_di <- both_plots_b_simpson %>% 
+    ggplot(aes(x = estimate, y = fct_rev(fct_inorder(biome)), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = lower.CL, xmax = upper.CL)) +
+    geom_vline(xintercept = 0, lty = 1) +
+    geom_hline(yintercept = 8.5, lty = 3, color = "black") +
+    labs(y = "", x = "Simpson index difference") +
+    scale_color_manual(values = c("#ff3399", "white", "#00bcbc", "white", "white", "#00bcbc", "#00bcbc", "white", "white", "white")) +
+    scale_x_continuous(labels = number_format(accuracy = 0.01, decimal.mark = '.'),
+                       breaks = seq(-0.05,0.25,0.05), 
+                       limits = c(-0.057, 0.25)) +    
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          axis.text.y = element_blank (),
+          text = element_text(size = 20, color = "black"), 
+          axis.text = element_text(size = 20, color = "black"),
+          legend.position = "none", 
+          plot.margin = unit(c(1, 1, 1, 0.1), "cm"))
+)
+
+# Total panel plot ----
+
+title_total1 <- ggdraw() + draw_label("Vascular plants biodiversity differences between plots containing neophytes", fontface='bold', size = 22, vjust = 1)
+title_total2 <- ggdraw() + draw_label("and plots exclusively containing native species", fontface='bold', size = 22, vjust = 1)
+title_total3 <- ggdraw() + draw_label(" ", fontface='bold', size = 22, vjust = 1)
+title_total4 <- ggdraw() + draw_label("Non-invasive neophytes", fontface='bold', size = 22, vjust = 1)
+title_total4b <- ggdraw() + draw_label("vs. exclusively natives", fontface='bold', size = 22, vjust = 1)
+title_total5 <- ggdraw() + draw_label("Invasive neophytes", fontface='bold', size = 22, vjust = 1)
+
+
+(results_total <- plot_grid(plot_a_biomes_SR, plot_b_biomes_SR, plot_a_biomes_shannon_di, plot_b_biomes_shannon_di, plot_a_biomes_simpson_di, plot_b_biomes_simpson_di,
+                           labels = c("a", "", "b", "", "c", "" ),
+                           rel_widths = c(1.9, 1, 1.9, 1, 1.9, 1),
+                           nrow = 3, ncol = 2, 
+                           label_size = 25,
+                           hjust = -2)
+)
+
+(titles <- plot_grid(title_total3, title_total4, title_total3, title_total5, title_total3,
+                     rel_widths = c(0.5, 0.4, 0.05, 0.4, 0.03), 
+                     nrow = 1)
+)
+titles2 <- plot_grid(title_total3, title_total4b, title_total3, title_total4b, title_total3,
+                     rel_widths = c(0.5, 0.4, 0.05, 0.4, 0.03), 
+                     nrow = 1)
+
+results_total <- plot_grid(title_total3, titles, titles2, title_total3, results_total, 
+                          labels = c("", "", "", "",""), 
+                          rel_heights = c(0.02, 0.02, 0.02, 0.02, 1),
+                          rel_widths = c(1, 1, 1, 1, 1),
+                          nrow = 5, 
+                          ncol = 1) +
+  theme(panel.border = element_rect(color = "grey40", fill = NA, size = 2))
+
+ggsave("rdata/results_total.png", plot = results_total, bg = "white",  width = 16, height = 19.2, units = "in")
+
+
+# NATIVES ----
+
+# Natives models ---- 
+
+# A
+
+model_a_SR_natives <- glmer(species_richness_natives ~ plot_status + (1 | cell), data = master3_a, family = poisson())
+
+model_a_shannon_di_natives <- lmer(shannon_di_natives ~ plot_status + (1|cell), data = master3_a)
+
+model_a_simpson_di_natives <- lmer(simpson_di_natives ~ plot_status + (1|cell), data = master3_a)
+
+model_a_biomes_SR_natives<- glmer(species_richness_natives ~ plot_status * biome + (1 | cell), data = master3_a, family = poisson()) 
+
+model_a_biomes_shannon_di_natives <- lmer(shannon_di_natives ~ plot_status * biome + (1|cell), data = master3_a)
+
+model_a_biomes_simpson_di_natives <- lmer(simpson_di_natives ~ plot_status * biome + (1|cell), data = master3_a)
+
+# B 
+
+model_b_SR_natives <- glmer(species_richness_natives ~ plot_status + (1 | cell), data=master3_b,family=poisson()) 
+
+model_b_shannon_di_natives <- lmer(shannon_di_natives ~ plot_status + (1|cell) , data = master3_b_evenness_native)
+
+model_b_simpson_di_natives <- lmer(simpson_di_natives ~ plot_status + (1|cell), data = master3_b_evenness_native)
+
+model_b_biomes_SR_natives <- glmer(species_richness_natives ~ plot_status * biome + (1 | cell), data=master3_b,family=poisson()) 
+
+model_b_biomes_shannon_di_natives <- lmer(shannon_di_natives ~ plot_status * biome + (1|cell), data = master3_b_evenness_native)
+
+model_b_biomes_simpson_di_natives <- lmer(simpson_di_natives ~ plot_status * biome + (1|cell), data = master3_b_evenness_native)
+
+
+# A SR natives ----
+
+(emmeans(model_a_biomes_SR_natives, ~ plot_status, type = "response"))
+
+model_a_SR_natives_plot <- pairs(
+  emmeans(model_a_SR_natives, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_a_biomes_SR_natives_plot <- pairs(
+  emmeans(model_a_biomes_SR_natives, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_a_sample_size) %>% 
+  filter(cells_in_biome >= 4) %>% 
+  left_join(biomes_b_sample_size, 
+            by = c("biome")) %>% 
+  rename ("cells_in_biome_a" = "cells_in_biome.x", "cells_in_biome_b" = "cells_in_biome.y") %>%
+  mutate(cells_in_biome_b = ifelse(cells_in_biome_b <= 4, "-", cells_in_biome_b))
+
+both_plots_a_SR_natives <- model_a_SR_natives_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_a_biomes_SR_natives_plot) %>% 
+  replace_na(list(cells_in_biome_a = 82)) %>% 
+  replace_na(list(cells_in_biome_b = "40")) %>% 
+  mutate(biome = paste0(biome, " (", cells_in_biome_a, ", ", cells_in_biome_b, ") ")) 
+
+
+(plot_a_biomes_SR_natives <- both_plots_a_SR_natives %>% 
+    ggplot(aes(x = ratio, y = fct_rev(biome), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = asymp.LCL, xmax = asymp.UCL)) +
+    geom_vline(xintercept = 1, lty = 1) +
+    geom_hline(yintercept = 8.5, lty = 3, color = "black") +
+    labs(y = "", x = "Species richness ratio") +
+    scale_color_manual(values = c("#b33b00", rep("#0078b3",10))) + 
+    scale_x_continuous(breaks = seq(0.9,1.4,0.1), 
+                       limits = c(0.86, 1.46)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), 
+          text = element_text(size = 20, color = "black"), 
+          axis.text = element_text(size = 20, color = "black"),
+          axis.text.y = element_text(margin = margin(r = 10)),
+          legend.position = "none", 
+          plot.margin = unit(c(1,0.05,0.5,0.5), "cm"))
+)
+
+# A shannon natives ----
+
+means_a_shannon_natives <-  emmeans(model_a_shannon_di_natives, ~ plot_status, type = "response") %>% 
+  confint %>% 
+  data.frame() 
+
+model_a_shannon_natives_plot <- pairs(
+  emmeans(model_a_shannon_di_natives, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_a_biomes_shannon_natives_plot <- pairs(
+  emmeans(model_a_biomes_shannon_di_natives, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_a_sample_size) %>% 
+  filter(cells_in_biome >= 4) %>% 
+  left_join(biomes_b_evenness_sample_size, 
+            by = c("biome")) %>% 
+  rename ("cells_in_biome_a" = "cells_in_biome", "cells_in_biome_b" = "cells_in_b_evennessiome") %>%
+  mutate(cells_in_biome_b = ifelse(cells_in_biome_b <= 4, "-", cells_in_biome_b))
+
+both_plots_a_shannon_natives <- model_a_shannon_natives_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_a_biomes_shannon_natives_plot) %>% 
+  replace_na(list(cells_in_biome_a = 82)) %>% 
+  replace_na(list(cells_in_biome_b = "37")) %>% 
+  mutate(biome = paste0(biome, " (", cells_in_biome_a, ", ", cells_in_biome_b, ") ")) 
+
+(plot_a_biomes_shannon_di_natives <- both_plots_a_shannon_natives %>% 
+    ggplot(aes(x = estimate, y = fct_rev(biome), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = lower.CL, xmax = upper.CL)) +
+    geom_vline(xintercept = 0, lty = 1) +
+    geom_hline(yintercept = 8.5, lty = 3, color = "black") +
+    labs(y = "", x = "Shannon index difference") +
+    scale_color_manual(values = c("#ff9933", rep("#9933ff",10))) + 
+    scale_x_continuous(breaks = seq(-0.2,0.8,0.2), 
+                       limits = c(-0.25, 0.85)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), 
+          text = element_text(size = 20, color = "black"), 
+          axis.text = element_text(size = 20, color = "black"),
+          axis.text.y = element_text(margin = margin(r = 10)),
+          legend.position = "none", 
+          plot.margin = unit(c(1,0.1,0.5,0.5), "cm"))
+)
+
+# A simpson natives ----
+
+means_a_simpson_natives <-  emmeans(model_a_simpson_di_natives, ~ plot_status, type = "response") %>% 
+  confint %>% 
+  data.frame() 
+
+model_a_simpson_natives_plot <- pairs(
+  emmeans(model_a_simpson_di_natives, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_a_biomes_simpson_natives_plot <- pairs(
+  emmeans(model_a_biomes_simpson_di_natives, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_a_sample_size) %>% 
+  filter(cells_in_biome >= 4) %>% 
+  left_join(biomes_b_evenness_sample_size, 
+            by = c("biome")) %>% 
+  rename ("cells_in_biome_a" = "cells_in_biome", "cells_in_biome_b" = "cells_in_b_evennessiome") %>%
+  mutate(cells_in_biome_b = ifelse(cells_in_biome_b <= 4, "-", cells_in_biome_b))
+
+both_plots_a_simpson_natives <- model_a_simpson_natives_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_a_biomes_simpson_natives_plot) %>% 
+  replace_na(list(cells_in_biome_a = 82)) %>% 
+  replace_na(list(cells_in_biome_b = "37")) %>% 
+  mutate(biome = paste0(biome, " (", cells_in_biome_a, ", ", cells_in_biome_b, ") ")) 
+
+(plot_a_biomes_simpson_di_natives <- both_plots_a_simpson_natives %>% 
+    ggplot(aes(x = estimate, y = fct_rev(biome), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = lower.CL, xmax = upper.CL)) +
+    geom_vline(xintercept = 0, lty = 1) +
+    geom_hline(yintercept = 8.5, lty = 3, color = "black") +
+    labs(y = "", x = "Simpson index difference") +
+    scale_color_manual(values = c("#ff3399", rep("#00bcbc",10))) + 
+    scale_x_continuous(labels = number_format(accuracy = 0.01, decimal.mark = '.'), 
+                       breaks = seq(-0.05, 0.25, 0.05), 
+                       limits = c(-0.057, 0.25)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), 
+          text = element_text(size = 20, color = "black"), 
+          axis.text = element_text(size = 20, color = "black"),
+          axis.text.y = element_text(margin = margin(r = 10)),
+          legend.position = "none", 
+          plot.margin = unit(c(1,0.1,1,0.5), "cm"))
+)
+
+
+# B SR natives----
+model_b_SR_natives_plot <- pairs(
+  emmeans(model_b_SR_natives, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+means_SR_natives_b <- emmeans(model_b_SR_natives, ~ plot_status, type = "response")
+
+model_b_biomes_SR_natives_plot <- pairs(
+  emmeans(model_b_biomes_SR_natives, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_b_evenness_sample_size) %>% 
+  filter(biome != "Subtropics with winter rain")
+
+both_plots_b_SR_natives <- model_b_SR_natives_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_b_biomes_SR_natives_plot)
+
+(plot_b_biomes_SR_natives <- both_plots_b_SR_natives %>% 
+    ggplot(aes(x = ratio, y = fct_rev(fct_inorder(biome)), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = asymp.LCL, xmax = asymp.UCL)) +
+    geom_vline(xintercept = 1, lty = 1) +
+    geom_hline(yintercept = 8.5, lty = 3, color = "black") +
+    labs(y = "", x = "Species richness ratio") +
+    scale_color_manual(values = c("#b33b00", "white", "#0078b3", "white", "white", "#0078b3", "#0078b3", "white", "white", "white")) +
+    scale_x_continuous(breaks = seq(0.9,1.4,0.1), 
+                       limits = c(0.93, 1.46)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          axis.text.y = element_blank (),
+          text = element_text(size = 20, color = "black"), 
+          axis.text = element_text(size = 20, color = "black"),
+          legend.position = "none", 
+          plot.margin = unit(c(1,1,0.5,0.05), "cm"))
+)
+
+# B shannon natives ----
+
+model_b_shannon_natives_plot <- pairs(
+  emmeans(model_b_biomes_shannon_di_natives, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_b_biomes_shannon_natives_plot <- pairs(
+  emmeans(model_b_biomes_shannon_di_natives, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_b_sample_size) %>% 
+  filter(biome != "Subtropics with winter rain")
+
+both_plots_b_shannon_natives <- model_b_shannon_natives_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_b_biomes_shannon_natives_plot) 
+
+(plot_b_biomes_shannon_di_natives <- both_plots_b_shannon_natives %>% 
+    ggplot(aes(x = estimate, y = fct_rev(fct_inorder(biome)), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = lower.CL, xmax = upper.CL)) +
+    geom_vline(xintercept = 0, lty = 1) +
+    geom_hline(yintercept = 8.5, lty = 3, color = "black") +
+    labs(y = "", x = "Shannon index difference") +
+    scale_color_manual(values = c("#ff9933", "white", "#9933ff", "white", "white", "#9933ff", "#9933ff", "white", "white", "white")) +
+    scale_x_continuous(breaks = seq(-0.20,0.8,0.2), 
+                       limits = c(-0.25, 0.85)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          axis.text.y = element_blank (),
+          text = element_text(size = 20, color = "black"), 
+          axis.text = element_text(size = 20, color = "black"),
+          legend.position = "none", 
+          plot.margin = unit(c(1,1,0.5,0.1), "cm"))
+)
+
+
+# B simpson natives ----
+
+model_b_simpson_natives_plot <- pairs(
+  emmeans(model_b_simpson_di_natives, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_b_biomes_simpson_natives_plot <- pairs(
+  emmeans(model_b_biomes_simpson_di_natives, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  filter(biome != "Subtropics with winter rain")
+
+both_plots_b_simpson_natives <- model_b_simpson_natives_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_b_biomes_simpson_natives_plot)
+
+(plot_b_biomes_simpson_di_natives <- both_plots_b_simpson_natives %>% 
+    ggplot(aes(x = estimate, y = fct_rev(fct_inorder(biome)), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = lower.CL, xmax = upper.CL)) +
+    geom_vline(xintercept = 0, lty = 1) +
+    geom_hline(yintercept = 8.5, lty = 3, color = "black") +
+    labs(y = "", x = "Simpson index difference") +
+    scale_color_manual(values = c("#ff3399", "white", "#00bcbc", "white", "white", "#00bcbc", "#00bcbc", "white", "white", "white")) +
+    scale_x_continuous(labels = number_format(accuracy = 0.01, decimal.mark = '.'),
+                       breaks = seq(-0.05,0.25,0.05), 
+                       limits = c(-0.057, 0.25)) +    
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          axis.text.y = element_blank (),
+          text = element_text(size = 20, color = "black"), 
+          axis.text = element_text(size = 20, color = "black"),
+          legend.position = "none", 
+          plot.margin = unit(c(1, 1, 1, 0.1), "cm"))
+)
+
+
+# Total natives panel plot ----
+
+title_total1_natives <- ggdraw() + draw_label("Native vascular plants biodiversity differences between plots containing neophytes", fontface='bold', size = 22, vjust = 1)
+title_total2_natives <- ggdraw() + draw_label("and plots exclusively containing native species", fontface='bold', size = 22, vjust = 1)
+title_total3_natives <- ggdraw() + draw_label(" ", fontface='bold', size = 22, vjust = 1)
+title_total4_natives <- ggdraw() + draw_label("Non-invasive neophytes", fontface='bold', size = 22, vjust = 1)
+title_total5_natives <- ggdraw() + draw_label("Invasive neophytes", fontface='bold', size = 22, vjust = 1)
+
+
+(results_total_natives <- plot_grid(plot_a_biomes_SR_natives, plot_b_biomes_SR_natives, plot_a_biomes_shannon_di_natives, plot_b_biomes_shannon_di_natives, plot_a_biomes_simpson_di_natives, plot_b_biomes_simpson_di_natives,
+                           labels = c("a", "", "b", "", "c", "" ),
+                           rel_widths = c(1.9, 1, 1.9, 1, 1.9, 1),
+                           nrow = 3, ncol = 2, 
+                           label_size = 25,
+                           hjust = -2)
+)
+
+(titles_natives <- plot_grid(title_total3, title_total4, title_total3, title_total5, title_total3,
+                     rel_widths = c(0.5, 0.4, 0.05, 0.4, 0.03), 
+                     nrow = 1)
+)
+titles_natives2 <- plot_grid(title_total3, title_total4b, title_total3, title_total4b, title_total3,
+                     rel_widths = c(0.5, 0.4, 0.05, 0.4, 0.03), 
+                     nrow = 1)
+
+results_total_natives <- plot_grid(title_total3, titles_natives, titles_natives2, title_total3, results_total_natives, 
+                          labels = c("", "", "", "",""), 
+                          rel_heights = c(0.03, 0.02, 0.02, 0.02, 1),
+                          rel_widths = c(1, 1, 1, 1, 1),
+                          nrow = 5, 
+                          ncol = 1) +
+  theme(panel.border = element_rect(color = "grey40", fill = NA, size = 2))
+
+ggsave("rdata/results_total_natives.png", plot = results_total_natives, bg = "white",  width = 16, height = 19.2, units = "in")
+
+
+# SUPPLEMENTARY ----
+
+# C for supplementary ----
+
+master3_c <- read.csv("rdata/splotdt_glonaf_griis_master3_c.csv")
+biomes_c_sample_size <- read.csv("rdata/biomes_c_sample_size.csv")
+master3c_distribution <- read.csv("rdata/splotdt_glonaf_griis_master3_c_distribution.csv")
+length(unique(master3_c$cell))
+length(unique(master3_c$PlotObservationID))
+
+model_c_SR<- glmer(species_richness ~ plot_status + (1 | cell) + (1 | biome), data=master3_c,family=poisson()) 
+model_c_SR_natives<- glmer(species_richness_natives ~ plot_status + (1 | cell) + (1 | biome), data=master3_c,family=poisson())
+
+model_c_shannon_di <- lmer(shannon_di ~ plot_status + (1|cell) + (1 | biome), data = master3_c)
+model_c_shannon_di_native <- lmer(shannon_di_natives ~ plot_status + (1|cell) + (1 | biome), data = master3_c)
+
+model_c_simpson_di <- lmer(simpson_di ~ plot_status + (1|cell) + (1 | biome), data = master3_c)
+model_c_simpson_di_native <- lmer(simpson_di_natives ~ plot_status + (1|cell) + (1 | biome), data = master3_c)
+
+model_c_biomes_SR<- glmer(species_richness ~ plot_status * biome + (1 | cell), data=master3_c,family=poisson()) 
+model_c_biomes_SR_natives<- glmer(species_richness_natives ~ plot_status * biome + (1 | cell), data=master3_c,family=poisson())
+
+model_c_biomes_shannon_di <- lmer(shannon_di ~ plot_status * biome + (1|cell), data = master3_c)
+model_c_biomes_shannon_di_native <- lmer(shannon_di_natives ~ plot_status * biome + (1|cell), data = master3_c)
+
+model_c_biomes_simpson_di <- lmer(simpson_di ~ plot_status * biome + (1|cell), data = master3_c)
+model_c_biomes_simpson_di_native <- lmer(simpson_di_natives ~ plot_status * biome + (1|cell), data = master3_c)
+
+
+# C map ----
+world <- map_data("world") 
+world <- world %>% filter(region != "Antarctica")
+cc <- paletteer_d("ggsci::category10_d3") 
+map_c <- ggplot() + 
+  geom_map(data = world, map = world, aes(long, lat, map_id = region), color = "grey70", fill = "white") + 
+  geom_point(data = master3c_distribution, aes(Longitude, Latitude, color = biome), size = 5) + 
+  theme_void() +
+  labs(title = ~ atop(paste("Distribution of plots included in comparison analysis of areas containing non-invasive neophytes"),
+                      paste("and areas containing invasive neophytes"))) +
+  theme(legend.position = "bottom", 
+        text = element_text(size = 26),
+        plot.title = element_text(size = 28, vjust = 1, hjust = 0.3),
+        panel.border = element_rect(color = "grey40", fill = NA, size = 1),
+        plot.margin = unit(c(1,1,1,1), "cm")) + 
+  scale_color_manual(values = c("#1F77B4", "#D62728", "#E377C2", "#7F7F7F", "#BCBD22", "#17BECF"), na.value = "grey70", name = "Biomes     ") +
+  guides(color = guide_legend(override.aes = list(size=5), nrow = 4, byrow = TRUE)) 
+
+ggsave("rdata/map_c.png", plot = map_c, bg = "white", width = 18, height = 10, units = "in")
+
+
+# C SR ----
+model_c_SR_plot <- pairs(
+  emmeans(model_c_SR, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_c_biomes_SR_plot <- pairs(
+  emmeans(model_c_biomes_SR, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_c_sample_size) %>% 
+  filter(cells_in_biome >= 4)
+
+both_plots_c_SR <- model_c_SR_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_c_biomes_SR_plot) %>% 
+  replace_na(list(cells_in_biome = 26)) %>% 
+  replace_na(list(plots_in_biome = 331)) %>% 
+  mutate(biome = paste0(biome, " (", cells_in_biome, ", ", plots_in_biome, ") "))
+
+(plot_c_biomes_SR <- both_plots_c_SR %>% 
+    ggplot(aes(x = ratio, y = fct_rev(biome), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = asymp.LCL, xmax = asymp.UCL)) +
+    geom_vline(xintercept = 1, lty = 1) +
+    geom_hline(yintercept = 3.5, lty = 3, color = "black") +
+    labs(y = "", x = "Species richness ratio") +
+    scale_color_manual(values = c("#b33b00", rep("#0078b3",10))) + 
+    scale_x_continuous(breaks = seq(0.5,1.6,0.1), 
+                       limits = c(0.7, 1.1)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), 
+          text = element_text(size = 22, color = "black"), 
+          axis.text = element_text(size = 22, color = "black"),
+          legend.position = "none", 
+          plot.margin = unit(c(1, 1, 1, 0.1), "cm"))
+)
+
+
+# C shannon ----
+
+means_c_shannon <-  emmeans(model_c_shannon_di, ~ plot_status, type = "response") %>% 
+  confint %>% 
+  data.frame() 
+
+model_c_shannon_plot <- pairs(
+  emmeans(model_c_shannon_di, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_c_biomes_shannon_plot <- pairs(
+  emmeans(model_c_biomes_shannon_di, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_c_sample_size) %>% 
+  filter(cells_in_biome >= 4)
+
+both_plots_c_shannon <- model_c_shannon_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_c_biomes_shannon_plot) %>% 
+  replace_na(list(cells_in_biome = 26)) %>% 
+  replace_na(list(plots_in_biome = 331)) %>% 
+  mutate(biome = paste0(biome, " (", cells_in_biome, ", ", plots_in_biome, ") "))
+
+(plot_c_biomes_shannon_di <- both_plots_c_shannon %>% 
+    ggplot(aes(x = estimate, y = fct_rev(biome), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = lower.CL, xmax = upper.CL)) +
+    geom_vline(xintercept = 0, lty = 1) +
+    geom_hline(yintercept = 3.5, lty = 3, color = "black") +
+    labs(y = "", x = str_wrap("Shannon index difference ", width = 40)) +
+    scale_color_manual(values = c("#ff9933", rep("#9933ff",3))) + 
+    scale_x_continuous(breaks = seq(-1,1,0.2), 
+                       limits = c(-0.4, 0.3)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), 
+          text = element_text(size = 22, color = "black"), 
+          axis.text = element_text(size = 22, color = "black"),
+          legend.position = "none", 
+          plot.margin = unit(c(1, 1, 1, 0.1), "cm"))
+)
+
+# C simpson ----
+
+model_c_simpson_plot <- pairs(
+  emmeans(model_c_simpson_di, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_c_biomes_simpson_plot <- pairs(
+  emmeans(model_c_biomes_simpson_di, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_c_sample_size) %>% 
+  filter(cells_in_biome >= 4)
+
+both_plots_c_simpson <- model_c_simpson_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_c_biomes_simpson_plot) %>% 
+  replace_na(list(cells_in_biome = 26)) %>% 
+  replace_na(list(plots_in_biome = 331)) %>% 
+  mutate(biome = paste0(biome, " (", cells_in_biome, ", ", plots_in_biome, ") "))
+
+(plot_c_biomes_simpson_di <- both_plots_c_simpson %>% 
+    ggplot(aes(x = estimate, y = fct_rev(biome), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = lower.CL, xmax = upper.CL)) +
+    geom_vline(xintercept = 0, lty = 1) +
+    geom_hline(yintercept = 3.5, lty = 3, color = "black") +
+    labs(y = "", x = str_wrap("Simpson index difference", width = 40)) +
+    scale_color_manual(values = c("#ff3399", rep("#00bcbc",3))) + 
+    scale_x_continuous(labels = number_format(accuracy = 0.01, decimal.mark = '.'), 
+                       breaks = seq(-0.25, 0.25, 0.05)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), 
+          text = element_text(size = 22, color = "black"), 
+          axis.text = element_text(size = 22, color = "black"),
+          legend.position = "none", 
+          plot.margin = unit(c(1, 1, 1, 0.1), "cm"))
+)
+
+# C SR natives ----
+model_c_SR_natives_plot <- pairs(
+  emmeans(model_c_SR_natives, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_c_biomes_SR_natives_plot <- pairs(
+  emmeans(model_c_biomes_SR_natives, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_c_sample_size) %>% 
+  filter(cells_in_biome >= 4)
+
+both_plots_c_SR_natives <- model_c_SR_natives_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_c_biomes_SR_natives_plot) %>% 
+  replace_na(list(cells_in_biome = 26)) %>% 
+  replace_na(list(plots_in_biome = 331)) %>% 
+  mutate(biome = paste0(biome, " (", cells_in_biome, ", ", plots_in_biome, ") "))
+
+(plot_c_biomes_SR_natives <- both_plots_c_SR_natives %>% 
+    ggplot(aes(x = ratio, y = fct_rev(biome), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = asymp.LCL, xmax = asymp.UCL)) +
+    geom_vline(xintercept = 1, lty = 1) +
+    geom_hline(yintercept = 3.5, lty = 3, color = "black") +
+    labs(y = "", x = "Species richness ratio") +
+    scale_color_manual(values = c("#b33b00", rep("#0078b3",10))) + 
+    scale_x_continuous(breaks = seq(0.5,1.6,0.1), 
+                       limits = c(0.7, 1.1)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), 
+          axis.text.y = element_blank (),
+          text = element_text(size = 22, color = "black"), 
+          axis.text = element_text(size = 22, color = "black"),
+          legend.position = "none", 
+          plot.margin = unit(c(1, 1, 1, 0.1), "cm"))
+)
+
+# C shannon natives ----
+
+means_c_shannon_natives <-  emmeans(model_c_shannon_di_native, ~ plot_status, type = "response") %>% 
+  confint %>% 
+  data.frame() 
+
+model_c_shannon_natives_plot <- pairs(
+  emmeans(model_c_shannon_di_native, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_c_biomes_shannon_natives_plot <- pairs(
+  emmeans(model_c_biomes_shannon_di_native, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_c_sample_size) %>% 
+  filter(cells_in_biome >= 4)
+
+both_plots_c_shannon_natives <- model_c_shannon_natives_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_c_biomes_shannon_natives_plot) %>% 
+  replace_na(list(cells_in_biome = 26)) %>% 
+  replace_na(list(plots_in_biome = 331)) %>% 
+  mutate(biome = paste0(biome, " (", cells_in_biome, ", ", plots_in_biome, ") "))
+
+(plot_c_biomes_shannon_di_natives <- both_plots_c_shannon_natives %>% 
+    ggplot(aes(x = estimate, y = fct_rev(biome), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = lower.CL, xmax = upper.CL)) +
+    geom_vline(xintercept = 0, lty = 1) +
+    geom_hline(yintercept = 3.5, lty = 3, color = "black") +
+    labs(y = "", x = str_wrap("Shannon index difference ", width = 40)) +
+    scale_color_manual(values = c("#ff9933", rep("#9933ff",3))) + 
+    scale_x_continuous(breaks = seq(-1,1,0.2), 
+                       limits = c(-0.4, 0.3)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), 
+          axis.text.y = element_blank (),
+          text = element_text(size = 22, color = "black"), 
+          axis.text = element_text(size = 22, color = "black"),
+          legend.position = "none", 
+          plot.margin = unit(c(1, 1, 1, 0.1), "cm"))
+)
+
+
+# C simpson natives ----
+
+model_c_simpson_natives_plot <- pairs(
+  emmeans(model_c_simpson_di_native, ~ plot_status, type = "response")
+) %>% confint %>% 
+  data.frame() 
+
+model_c_biomes_simpson_natives_plot <- pairs(
+  emmeans(model_c_biomes_simpson_di_native, ~ plot_status | biome, type = "response")
+) %>% confint %>% 
+  data.frame() %>% 
+  left_join(biomes_c_sample_size) %>% 
+  filter(cells_in_biome >= 4)
+
+both_plots_c_simpson_natives <- model_c_simpson_natives_plot %>% 
+  mutate(biome = "All") %>% 
+  bind_rows(model_c_biomes_simpson_natives_plot) %>% 
+  replace_na(list(cells_in_biome = 26)) %>% 
+  replace_na(list(plots_in_biome = 331)) %>% 
+  mutate(biome = paste0(biome, " (", cells_in_biome, ", ", plots_in_biome, ") "))
+
+(plot_c_biomes_simpson_di_natives <- both_plots_c_simpson_natives %>% 
+    ggplot(aes(x = estimate, y = fct_rev(biome), color = biome)) +
+    geom_point() +
+    geom_linerange(aes(xmin = lower.CL, xmax = upper.CL)) +
+    geom_vline(xintercept = 0, lty = 1) +
+    geom_hline(yintercept = 3.5, lty = 3, color = "black") +
+    labs(y = "", x = str_wrap("Simpson index difference", width = 40)) +
+    scale_color_manual(values = c("#ff3399", rep("#00bcbc",3))) + 
+    scale_x_continuous(labels = number_format(accuracy = 0.01, decimal.mark = '.'), 
+                       breaks = seq(-0.25, 0.25, 0.05)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), 
+          axis.text.y = element_blank (),
+          text = element_text(size = 22, color = "black"), 
+          axis.text = element_text(size = 22, color = "black"),
+          legend.position = "none", 
+          plot.margin = unit(c(1, 1, 1, 0.1), "cm"))
+)
+
+
+
+# C Panel plot ----
+
+title_total3 <- ggdraw() + draw_label(" ", fontface='bold', size = 22, vjust = 1)
+title_total4 <- ggdraw() + draw_label("Total community", fontface='bold', size = 22, vjust = 1)
+title_total5 <- ggdraw() + draw_label("Native community", fontface='bold', size = 22, vjust = 1)
+
+
+(results_total_c <- plot_grid(plot_c_biomes_SR, plot_c_biomes_SR_natives, plot_c_biomes_shannon_di, plot_c_biomes_shannon_di_natives, plot_c_biomes_simpson_di, plot_c_biomes_simpson_di_natives,
+                           labels = c("a", "", "b", "", "c", "" ),
+                           rel_widths = c(2.1, 1, 2.1, 1, 2.1, 1),
+                           nrow = 3, ncol = 2, 
+                           label_size = 25,
+                           hjust = -2)
+)
+
+(titles <- plot_grid(title_total3, title_total4, title_total3, title_total5, title_total3,
+                     rel_widths = c(0.45, 0.4, 0.05, 0.4, 0.03), 
+                     nrow = 1)
+)
+
+results_total_c <- plot_grid(title_total3, titles, title_total3, results_total_c, 
+                          labels = c("", "", "",""), 
+                          rel_heights = c(0.02, 0.02, 0.02, 1),
+                          rel_widths = c(1, 1, 1, 1),
+                          nrow = 4, 
+                          ncol = 1) +
+  theme(panel.border = element_rect(color = "grey40", fill = NA, size = 2))
+
+ggsave("rdata/results_total_c_final.png", plot = results_total_c, bg = "white",  width = 16, height = 14.5, units = "in")
+
+
+

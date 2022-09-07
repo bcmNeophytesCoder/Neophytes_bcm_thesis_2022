@@ -1,0 +1,69 @@
+# This script aggregates sPlot, GloNAF, and GRIIS databases, and groups plots within 32km^2 equal-size grid cells 
+
+# Open SPlot data ----
+load("rdata/SPLOT/sPlotOpen (2).RData")
+
+# Open GLONAF data and select eu data ----
+glonaf_regions <- read_csv("rdata/GLONAF/Region_GloNAF_vanKleunenetal2018Ecology.csv")
+glonaf_species <- read_delim("rdata/GLONAF/Taxon_x_List_GloNAF_vanKleunenetal2018Ecology.csv", 
+                             delim = "\t", escape_double = FALSE, 
+                             locale = locale(encoding = "UTF-16"), 
+                             trim_ws = TRUE)
+glonaf <- full_join(glonaf_species, glonaf_regions)
+
+# Join GLONAF, GRIIS, and SPLOT ----
+
+# For regional matching with GloNAF, see 02-regional_matching R script
+splot_glonafregions <- read_csv("rdata/splot_glonafregions_world.csv")
+head(splot_glonafregions)
+
+# data exploration
+length(unique(splot_glonafregions$GeodAREA)) # 319 regions
+length(unique(splot_glonafregions$PlotObservationID)) #88,892 plots
+
+# Join splot DT and gloNAF
+splotdt_glonaf <- splot_glonafregions %>% 
+  # Add splot species
+  left_join(DT2.oa %>% 
+              select("Species", "PlotObservationID"), 
+            by=c("PlotObservationID")) %>% 
+  # Add glonaf species status, Assume perfect match between species names because the names are standardized 
+  left_join(glonaf %>% 
+              select(standardized_name, status, OBJIDsic), 
+            by=c("Species"="standardized_name","OBJIDsic")) %>% 
+  distinct()
+head(splotdt_glonaf)
+nrow(splotdt_glonaf) # 1,825,997
+
+# export:
+write.csv(splotdt_glonaf, 
+          "rdata/splotdt_glonaf.csv", row.names=FALSE)
+
+# Add GRIIS data ---- 
+# For GRIIS matching, see 12-GRIIS R script
+splotdt_glonaf_griis <- read.csv("rdata/splotdt_glonaf_griis.csv") %>% 
+  filter(!is.na(Species))
+head(splotdt_glonaf_griis)
+nrow(splotdt_glonaf_griis) # 1,825,995
+
+# Create a grid -----
+
+dggs <- dgconstruct(res = 13, metric = TRUE, resround = 'down') #resolution 13, cell size 32km^2 
+
+header.oa$cell <- dgGEO_to_SEQNUM(dggs, header.oa$Longitude, header.oa$Latitude)$seqnum # add cell ID to the header
+head(header.oa)
+
+# Add columns with GRIIS
+splotdt_glonaf_griis_cell <- splotdt_glonaf_griis %>% 
+  left_join(header.oa %>% 
+              select("PlotObservationID","cell"),
+            by=c("PlotObservationID"))
+head(splotdt_glonaf_griis_cell)
+nrow(splotdt_glonaf_griis_cell) # 1,825,995
+
+# Export datasets with cell ID at resolution 13 ----
+
+write.csv(splotdt_glonaf_griis_cell,
+          "rdata/splotdt_glonaf_griis_13.csv",row.names=FALSE)
+write.csv(header.oa,
+          "rdata/splotheader_glonaf_13.csv",row.names=FALSE)

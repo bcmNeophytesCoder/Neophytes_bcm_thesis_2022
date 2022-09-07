@@ -1,0 +1,30 @@
+# This script matches plots from the sPlot database with GloNAF regions, using sPlot's coordinates and GloNAF regional polygons
+
+sf_use_s2(FALSE)
+glonaf_regions1 <- read_sf("rdata/GLONAF/regions2.shp")
+
+# Worldwide regional matching ----
+splot_coordinates <- header.oa %>% 
+  select(PlotObservationID, Longitude, Latitude)
+splot_coords1 <- st_as_sf(splot_coordinates,coords=c("Longitude", "Latitude"),crs=4326)
+
+# Join datasets
+splot_glonafregions <- st_join(splot_coords1, glonaf_regions1, largest=TRUE) %>% # arg largest: if TRUE, return x features augmented with the fields of y that have the largest overlap with each of the features of x  
+  drop_na() 
+# export dataset
+write.csv(splot_glonafregions %>% 
+            select(-geometry), 
+          "rdata/splot_glonafregions_world.csv",row.names=FALSE)
+
+# EU regional matching ---- 
+# The following was conducted for analysis at the European level; not used in analysis.
+sploteu_coordinates <- sploteu_header %>% 
+  select(PlotObservationID, Longitude, Latitude)
+sploteu_coords1 <- st_as_sf(sploteu_coordinates,coords=c("Longitude", "Latitude"),crs=4326)
+# Join datasets
+sploteu_glonafregions <- st_join(sploteu_coords1, glonaf_regions1, largest=TRUE) %>% # arg largest: if TRUE, return x features augmented with the fields of y that have the largest overlap with each of the features of x  
+  drop_na() 
+sploteu_glonafregions2 <- sploteu_glonafregions %>% as.data.frame()
+write.csv(sploteu_glonafregions %>% 
+            select(-geometry),
+          "rdata/sploteu_glonafregions.csv",row.names=FALSE)

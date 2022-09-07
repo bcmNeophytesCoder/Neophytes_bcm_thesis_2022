@@ -1,4 +1,4 @@
-# This script creates calcultes species richness, shannon diversity index, and simpson's index and add these diversity measures to the master dataset created in script 04-
+# This script calcultes species richness, shannon diversity index, and simpson's index and add these diversity measures to the master dataset created in script 04-
 
 load("rdata/SPLOT/sPlotOpen (2).RData")
 
